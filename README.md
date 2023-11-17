@@ -1,4 +1,6 @@
 # tese
 Ficheiros de código úteis na tese
 
-O test2 é para tentar solucionar os problemas, é basicamente o teste
+O mutex está atualizado para uma versão que funciona direito (ancho eu)
+
+O semaphore continua o antigo 

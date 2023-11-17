@@ -7,14 +7,9 @@
 
 std::atomic<bool> done(false);
 
-//sacar coisas da standard library
 std::queue<int> buffer; //declara uma queue de ints chamada buffer
 std::mutex mtx; //declara um mutex chamado mtx
 std::condition_variable cv; //declara uma variavel de condição chamada cv. 
-//Uma variável de condição é um objeto capaz de bloquear a thread até que uma condição seja satisfeita. 
-//Ela é sempre usada em conjunto com um mutex, pois a condição é verificada enquanto o mutex está bloqueado.
-
-
 
 void producer(int elem) {
 
@@ -26,7 +21,7 @@ void producer(int elem) {
          produced = i;
          cv.notify_one();
       }
-      std::cout << "Produced: " << produced << std::endl;         //tirei o cout fora do lock aui e no consumer
+      std::cout << "Produced: " << produced << std::endl;         //tirei o cout fora do lock aqui e no consumer
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
    }
    done = true;
@@ -60,31 +55,36 @@ void consumer(int id, int num_items) {
 
 }
 int main() {
-    int n;
-    std::cout << "How many consumers do you want? ";
-    std::cin >> n; 
+   int n;
+   std::cout << "How many consumers do you want? ";
+   std::cin >> n; 
 
    int elem;
    std::cout << "How many elements do you want to produce? ";
    std::cin >> elem;
 
-   int divid = 1 + (elem/n); //dividir o numero de elementos pelo numero de consumidores
+   int divid = (elem/n); //dividir o numero de elementos pelo numero de consumidores
 
-    std::thread producerThread(producer, elem); 
+   std::thread producerThread(producer, elem);
+   
+   std::thread consumerThreads[n]; //criar um array com n threads de consumidor
 
-    std::thread consumerThreads[n]; //criar um array com n threads de consumidor
-
-    for(int i = 0; i < n; i++){
-        consumerThreads[i] = std::thread(consumer, i, divid); // pass i as the id argument and n as the num_items argument
-    }
+   for (int i = 0; i < n-1; ++i) {
+      consumerThreads[i] = std::thread(consumer, i, divid); // start consumer threads
+   }
+   if( (elem % n) == 0){
+         consumerThreads[n-1] = std::thread(consumer, n-1, divid); // start consumer threads
+      } else {
+         consumerThreads[n-1] = std::thread(consumer, n-1, divid + (elem%n)); // start consumer threads
+      }
     
-    producerThread.join(); 
+   producerThread.join(); //assim tanto o produtor como os consumidores trabalham ao mesmo tempo se puser em cima da erro e só produz
 
-    for (int i = 0; i < n; i++){
-        consumerThreads[i].join();
-    } 
+   for (int i = 0; i < n; i++){
+      consumerThreads[i].join();
+   } 
 
-    return 0;
+   return 0;
 }
 
 //nao sei se devia usar um dynamic array para os consumidores

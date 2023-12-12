@@ -1,4 +1,6 @@
 # tese
+State of the art article compilation
+
 Ficheiros de código úteis na tese
 
 O mutex e o semaphore estão atualizado para uma versão que funciona direito (acho eu)

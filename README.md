@@ -1,5 +1,4 @@
 # tese
-State of the art article compilation
 
 Ficheiros de código úteis na tese
 

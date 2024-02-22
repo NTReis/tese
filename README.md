@@ -2,7 +2,7 @@
 
 Ficheiros de código úteis na tese
 
-Tentei fazer uma espécie de mutex só com OpenMP, mas ainda não funciona como pretendido.
+Tentei fazer uma espécie de mutex só com OpenMP, mas ainda não funciona como pretendido. talvez precise de arranjar forma de fazer lock e unlock
 
 O mutex e o semaphore estão atualizado para uma versão que funciona direito (acho eu).
 

@@ -3,16 +3,59 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <atomic>
+#include <unistd.h>
+#include <random>
 
-std::atomic<bool> done(false);
+
+
+
+class Tasks {       
+  public:            
+    int duration;   
+
+    bool regular; 
+
+        // Constructor
+    Tasks() {
+        // Automatically set 'regular' to true or false randomly
+        setRandomRegular();
+    }
+
+
+    void run() {
+        if (regular) {
+            //std::cout << "Regular task \n\n";
+            usleep(200);
+        } else {
+            //std::cout << "Irregular task: ";
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::normal_distribution<double> distribution(0.51, 0.5);
+
+            double random_value = distribution(gen);
+            usleep(static_cast<int>(random_value * 200));
+
+            //std::cout << random_value << "\n" << std::endl;
+        }
+    }
+
+  private:
+  void setRandomRegular() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> distribution(0, 1);
+
+        regular = distribution(gen);  // 0 corresponds to false, 1 corresponds to true
+    }
+};
+
 
 std::queue<int> buffer; //declara uma queue de ints chamada buffer
 std::mutex mtx; //declara um mutex chamado mtx
 std::condition_variable cv; //declara uma variavel de condição chamada cv. 
 
 void producer(int elem) {
-
+ 
    for (int i = 1; i <= elem; ++i) {
       int produced;
       {
@@ -24,7 +67,7 @@ void producer(int elem) {
       std::cout << "Produced: " << produced << std::endl;         //tirei o cout fora do lock aqui e no consumer
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
    }
-   done = true;
+
    cv.notify_all(); // notify all waiting threads that production is done
 }
 
@@ -34,21 +77,18 @@ void consumer(int id, int num_items) {
 
    while (i < num_items) {
 
-      //std::cout << "Consumer " << id << ": i = " << i << ", num_items = " << num_items << std::endl; // print i and num_items debug
 
       std::unique_lock<std::mutex> lock(mtx);
 
-      cv.wait(lock, [] { return !buffer.empty() || done; }); // wait for notification from producer
+      cv.wait(lock, [] { return !buffer.empty(); }); // wait for notification from producer
 
-      if (!buffer.empty() && !done) {
+      if (!buffer.empty()) {
          int data = buffer.front();
          buffer.pop();
          lock.unlock(); // unlock before output to allow other consumers to proceed
          std::cout << "Consumer " << id << ": " << data << std::endl;
 
-         //std::cout << "Buffer size: " << buffer.empty() << ", done = " << done << std::endl; // print buffer size and done debug
 
-         //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       }
       ++i;
    }
@@ -87,4 +127,3 @@ int main() {
    return 0;
 }
 
-//nao sei se devia usar um dynamic array para os consumidores

@@ -10,3 +10,4 @@ A base de funcionamento é assumir que todos os workers têm a mesma eficiência
 
 
 O mutex_stress_test.sh e o teste_para_script.cpp são ficheiros para testagem extensa quando aumento o tempo de sleep das irregular tasks fica tudo desincronizado.
+Mudei o queue para dqueue que pode aumentar e diminuir dinamiocamente, também aloca automaticamente o espaço de memória necessário.

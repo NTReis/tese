@@ -53,6 +53,12 @@ std::condition_variable cv;
 int globalTaskId = 0;  // Global variable to store the task ID
 std::mutex idMutex;    // Mutex to protect the increment operation for globalTaskId
 
+std::vector<std::deque<Tasks>> taskBufferConsumer;
+std::condition_variable producer_cv;  // new condition variable for the scheduler
+
+
+
+
 void producer(int id, int elem) {
     for (int i = 0; i < elem; ++i) {
         {
@@ -63,13 +69,50 @@ void producer(int id, int elem) {
             std::unique_lock<std::mutex> taskLock(mtx);
             taskBuffer.push_back(Tasks(taskId));
             taskLock.unlock();
-            cv.notify_one();
+            //cv.notify_one();
+            
             std::cout << "Producer" << id << ": " << taskId << std::endl;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs
     }
+    //std::cout << taskBuffer.size() << std::endl; //debug
 
+    //cv.notify_all();
+    producer_cv.notify_one();
+}
+
+void scheduler(int consumers) {
+
+    std::unique_lock<std::mutex> lock(mtx);
+    producer_cv.wait(lock); // wait for the first notification from the producer
+
+    
+    int totalTasks = taskBuffer.size();
+    int consumer_workload = totalTasks / consumers;
+    int consumer_remainder = totalTasks % consumers;
+
+    lock.unlock();
+    for (int i = 0; i < consumers; ++i) {
+        int sharedtask = consumer_workload + (i < consumer_remainder ? 1 : 0);
+
+        std::cout << "Scheduler distributing " << sharedtask << " tasks to Consumer" << i << std::endl;
+
+        for (int j = 0; j < sharedtask && !taskBuffer.empty(); ++j) {
+            
+            std::unique_lock<std::mutex> lock(mtx);
+            producer_cv.wait(lock, [&] { return !taskBuffer.empty(); });
+
+            Tasks task = taskBuffer.front();
+            taskBuffer.pop_front();
+
+            taskBufferConsumer[i].push_back(task);
+
+            lock.unlock();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs
+
+    }    
     cv.notify_all();
 }
 
@@ -79,11 +122,11 @@ void consumer(int id, int num_items) {
     while (i < num_items) {
         std::unique_lock<std::mutex> lock(mtx);
 
-        cv.wait(lock, [&] { return !taskBuffer.empty(); });
+        cv.wait(lock, [&] { return !taskBufferConsumer[id].empty(); });
 
-        if (!taskBuffer.empty()) {
-            Tasks task = taskBuffer.front();
-            taskBuffer.pop_front();
+        if (!taskBufferConsumer[id].empty()) {
+            Tasks task = taskBufferConsumer[id].front();
+            taskBufferConsumer[id].pop_front();
             std::cout << "Consumer" << id << ": ";
             
             task.run();
@@ -123,6 +166,7 @@ int main(int argc, char* argv[]) {
         producers = elem;
     }
 
+    taskBufferConsumer.resize(consumers);
 
     std::thread producerThreads[producers];
 
@@ -135,6 +179,7 @@ int main(int argc, char* argv[]) {
         producerThreads[i] = std::thread(producer, i, workload);
     }
 
+    std::thread schedulerThread(scheduler, consumers);
 
     // Create consumer threads
     for (int i = 0; i < consumers; ++i) {
@@ -142,11 +187,18 @@ int main(int argc, char* argv[]) {
         consumerThreads[i] = std::thread(consumer, i, workload);
     }
 
+ 
+
     for (int i = 0; i < producers; i++) {
         producerThreads[i].join();
     }
+ 
 
-    
+
+    schedulerThread.join();
+
+
+
     for (int i = 0; i < consumers; i++) {
         consumerThreads[i].join();
     }

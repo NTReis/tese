@@ -117,7 +117,8 @@ int main(int argc, char* argv[]) {
     if (consumer_workload == 0) {
         std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
         consumers = elem;
-    } else if (producer_workload == 0) {
+    } 
+    if (producer_workload == 0) {
         std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
         producers = elem;
     }

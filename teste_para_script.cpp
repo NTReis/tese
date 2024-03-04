@@ -61,7 +61,7 @@ std::condition_variable producer_cv;  // new condition variable for the schedule
 
 void producer(int id, int elem) {
     for (int i = 0; i < elem; ++i) {
-        {
+        
             std::unique_lock<std::mutex> lock(idMutex);
             int taskId = globalTaskId++;  // Get the current ID and increment it
             lock.unlock();
@@ -72,21 +72,34 @@ void producer(int id, int elem) {
             //cv.notify_one();
             
             std::cout << "Producer" << id << ": " << taskId << std::endl;
-        }
+        
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs
+        //std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs // removed para ser mais rapdio e ja pus o sleep fora
     }
     //std::cout << taskBuffer.size() << std::endl; //debug
 
     //cv.notify_all();
-    producer_cv.notify_one();
+
+    //std::this_thread::sleep_for(std::chrono::microseconds(2500));
+    
+    
+
+    std::this_thread::sleep_for(std::chrono::microseconds(1500));
+
 }
+
+//2ms works fine. 1.5 parece ser o sweetspot
+//está dar erro, está dar unlock antes de acabar os produtores
 
 void scheduler(int consumers) {
 
     std::unique_lock<std::mutex> lock(mtx);
+
+
     producer_cv.wait(lock); // wait for the first notification from the producer
 
+
+    std::cout << "LOCK" << std::endl;
     
     int totalTasks = taskBuffer.size();
     int consumer_workload = totalTasks / consumers;
@@ -114,6 +127,9 @@ void scheduler(int consumers) {
 
     }    
     cv.notify_all();
+    //std::cout << "UNLOCK" << std::endl;
+    //cv.notify_all();
+    
 }
 
 void consumer(int id, int num_items) {
@@ -121,8 +137,9 @@ void consumer(int id, int num_items) {
 
     while (i < num_items) {
         std::unique_lock<std::mutex> lock(mtx);
-
+        //std::cout << "UNLOCK" << std::endl;
         cv.wait(lock, [&] { return !taskBufferConsumer[id].empty(); });
+        //std::cout << "UNLOCK" << std::endl;
 
         if (!taskBufferConsumer[id].empty()) {
             Tasks task = taskBufferConsumer[id].front();
@@ -130,6 +147,7 @@ void consumer(int id, int num_items) {
             std::cout << "Consumer" << id << ": ";
             
             task.run();
+            
             lock.unlock();
             ++i;
         }
@@ -192,12 +210,13 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < producers; i++) {
         producerThreads[i].join();
     }
+
+    producer_cv.notify_one(); 
+    //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
+
+    std::cout << "UNLOCK" << std::endl;
  
-
-
     schedulerThread.join();
-
-
 
     for (int i = 0; i < consumers; i++) {
         consumerThreads[i].join();

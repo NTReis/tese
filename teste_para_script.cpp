@@ -1,3 +1,4 @@
+
 #include <iostream>
 #include <queue>
 #include <thread>
@@ -6,59 +7,18 @@
 #include <unistd.h>
 #include <random>
 #include <atomic>
+#include "Task.h"
 
-class Tasks {
-public:
-    int id;
-    bool regular;
 
-    int getId() const {
-        return id;
-    }
-
-    // Constructor
-    Tasks(int task_id) : id(task_id) {
-        setRandomRegular();
-    }
-
-    void run() {
-        if (regular) {
-            std::cout << "Regular task " << id << "\n";
-            usleep(200);
-        } else {
-            std::cout << "Irregular task " << id << ": ";
-            std::random_device rd;
-            std::mt19937 gen(rd());
-            std::normal_distribution<double> distribution(0.51, 0.5);
-
-            double random_value = std::abs(distribution(gen));
-            usleep(static_cast<int>(random_value * 200));
-
-            std::cout << random_value << "\n";
-        }
-    }
-
-private:
-    void setRandomRegular() {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<int> distribution(0, 1);
-
-        regular = distribution(gen);  // 0 corresponds to false, 1 corresponds to true
-    }
-};
-
-std::deque<Tasks> taskBuffer;
+std::deque<Task> taskBuffer;
 std::mutex mtx;
 std::condition_variable cv;
 int globalTaskId = 0;  // Global variable to store the task ID
 std::mutex idMutex;    // Mutex to protect the increment operation for globalTaskId
 std::mutex consumerMutex;
-std::vector<std::deque<Tasks>> taskBufferConsumer;
+std::vector<std::deque<Task>> taskBufferConsumer;
 std::condition_variable producer_cv;  // new condition variable for the scheduler
 std::atomic<bool> producersFinished = 0;
-
-
 
 
 void producer(int id, int elem) {
@@ -69,7 +29,7 @@ void producer(int id, int elem) {
             lock.unlock();
 
             std::unique_lock<std::mutex> taskLock(mtx);
-            taskBuffer.push_back(Tasks(taskId));
+            taskBuffer.push_back(Task(taskId));
             taskLock.unlock();
             
             std::cout << "Producer" << id << ": " << taskId << std::endl;
@@ -118,7 +78,7 @@ void scheduler(int consumers) {
             std::unique_lock<std::mutex> lock(consumerMutex);
             producer_cv.wait(lock, [&] { return !taskBuffer.empty(); });
 
-            Tasks task = taskBuffer.front();
+            Task task = taskBuffer.front();
             taskBuffer.pop_front();
 
             taskBufferConsumer[i].push_back(task);
@@ -144,7 +104,7 @@ void consumer(int id, int num_items) {
         //std::cout << "UNLOCK" << std::endl;
 
         if (!taskBufferConsumer[id].empty()) {
-            Tasks task = taskBufferConsumer[id].front();
+            Task task = taskBufferConsumer[id].front();
             taskBufferConsumer[id].pop_front();
             std::cout << "Consumer" << id << ": ";
             

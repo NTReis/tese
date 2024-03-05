@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <unistd.h>
 #include <random>
+#include <atomic>
 
 class Tasks {
 public:
@@ -55,6 +56,7 @@ std::mutex idMutex;    // Mutex to protect the increment operation for globalTas
 std::mutex consumerMutex;
 std::vector<std::deque<Tasks>> taskBufferConsumer;
 std::condition_variable producer_cv;  // new condition variable for the scheduler
+std::atomic<bool> producersFinished = 0;
 
 
 
@@ -69,22 +71,14 @@ void producer(int id, int elem) {
             std::unique_lock<std::mutex> taskLock(mtx);
             taskBuffer.push_back(Tasks(taskId));
             taskLock.unlock();
-            //cv.notify_one();
             
             std::cout << "Producer" << id << ": " << taskId << std::endl;
-        
-
-        //std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs // removed para ser mais rapdio e ja pus o sleep fora
+                    
     }
-    //std::cout << taskBuffer.size() << std::endl; //debug
+    // producer_cv.notify_one();
 
-    //cv.notify_all();
 
-    //std::this_thread::sleep_for(std::chrono::microseconds(2500));
-    
-    
-
-    std::this_thread::sleep_for(std::chrono::microseconds(1500));
+    //std::this_thread::sleep_for(std::chrono::microseconds(1500));
 
 }
 
@@ -93,14 +87,22 @@ void producer(int id, int elem) {
 
 void scheduler(int consumers) {
 
+    
+     while (!producersFinished) {
+        std::this_thread::sleep_for(std::chrono::microseconds(10)); // Sleep to prevent busy waiting
+    }
+
+
     std::unique_lock<std::mutex> lock(mtx);
 
+    while(!taskBuffer.empty())
+    {
 
-    producer_cv.wait(lock); // wait for the first notification from the producer
+    producer_cv.wait(lock, []{ return !taskBuffer.empty(); }); 
 
 
     std::cout << "LOCK" << std::endl;
-    
+        
     int totalTasks = taskBuffer.size();
     int consumer_workload = totalTasks / consumers;
     int consumer_remainder = totalTasks % consumers;
@@ -112,7 +114,7 @@ void scheduler(int consumers) {
         std::cout << "Scheduler distributing " << sharedtask << " tasks to Consumer" << i << std::endl;
 
         for (int j = 0; j < sharedtask && !taskBuffer.empty(); ++j) {
-            
+                
             std::unique_lock<std::mutex> lock(consumerMutex);
             producer_cv.wait(lock, [&] { return !taskBuffer.empty(); });
 
@@ -123,13 +125,13 @@ void scheduler(int consumers) {
 
             lock.unlock();
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(1500)); // to synchronize outputs
+            //std::this_thread::sleep_for(std::chrono::microseconds(1500)); // to synchronize outputs
 
     }    
     cv.notify_all();
     //std::cout << "UNLOCK" << std::endl;
     //cv.notify_all();
-    
+    }
 }
 
 void consumer(int id, int num_items) {
@@ -211,12 +213,13 @@ int main(int argc, char* argv[]) {
         producerThreads[i].join();
     }
 
+    producersFinished = 1;
 
+    //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
     std::cout << "UNLOCK" << std::endl;
+    producer_cv.notify_one();
+    
 
-    //producer_cv.notify_one(); //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
-
-    producer_cv.notify_all(); 
  
     schedulerThread.join();
 

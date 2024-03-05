@@ -52,7 +52,7 @@ std::mutex mtx;
 std::condition_variable cv;
 int globalTaskId = 0;  // Global variable to store the task ID
 std::mutex idMutex;    // Mutex to protect the increment operation for globalTaskId
-
+std::mutex consumerMutex;
 std::vector<std::deque<Tasks>> taskBufferConsumer;
 std::condition_variable producer_cv;  // new condition variable for the scheduler
 
@@ -113,7 +113,7 @@ void scheduler(int consumers) {
 
         for (int j = 0; j < sharedtask && !taskBuffer.empty(); ++j) {
             
-            std::unique_lock<std::mutex> lock(mtx);
+            std::unique_lock<std::mutex> lock(consumerMutex);
             producer_cv.wait(lock, [&] { return !taskBuffer.empty(); });
 
             Tasks task = taskBuffer.front();
@@ -123,7 +123,7 @@ void scheduler(int consumers) {
 
             lock.unlock();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // to synchronize outputs
+        std::this_thread::sleep_for(std::chrono::microseconds(1500)); // to synchronize outputs
 
     }    
     cv.notify_all();
@@ -136,7 +136,7 @@ void consumer(int id, int num_items) {
     int i = 0;
 
     while (i < num_items) {
-        std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(consumerMutex);
         //std::cout << "UNLOCK" << std::endl;
         cv.wait(lock, [&] { return !taskBufferConsumer[id].empty(); });
         //std::cout << "UNLOCK" << std::endl;
@@ -211,10 +211,12 @@ int main(int argc, char* argv[]) {
         producerThreads[i].join();
     }
 
-    producer_cv.notify_one(); 
-    //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
 
     std::cout << "UNLOCK" << std::endl;
+
+    //producer_cv.notify_one(); //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
+
+    producer_cv.notify_all(); 
  
     schedulerThread.join();
 

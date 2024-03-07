@@ -19,10 +19,10 @@ public:
         setRandomRegular();
     }
 
-    void run() {
+    void run(double frequency) {
         if (regular) {
             std::cout << "Regular task " << id << "\n";
-            usleep(200);
+            usleep(200*frequency);
         } else {
             std::cout << "Irregular task " << id << ": ";
             std::random_device rd;
@@ -30,7 +30,7 @@ public:
             std::normal_distribution<double> distribution(0.51, 0.5);
 
             double random_value = std::abs(distribution(gen));
-            usleep(static_cast<int>(random_value * 200));
+            usleep(static_cast<int>(random_value * 200)*frequency);
 
             std::cout << random_value << "\n";
         }

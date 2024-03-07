@@ -1,20 +1,20 @@
 #!/bin/bash
 
 # Compile the C++ program
-g++ teste_para_script.cpp -o mutex_exec -lpthread
+#g++ teste_para_script.cpp -o mutex_exec -lpthread
+g++ testing.cpp -o mutex_exec -lpthread
 
+num_consumers=5
+#num_producers=3
+#num_elements=6
 
-# num_consumers=5
-# num_producers=7
-# num_elements=2
-
-cycles=2500
+cycles=1
 
 
 # Run the program in a loop for a certain number of cycles
 for (( cycle = 1; cycle <= cycles; cycle++ )); do
 
-    num_consumers=$(( (RANDOM % 10) + 1 ))  
+    # num_consumers=$(( (RANDOM % 10) + 1 ))  
     num_producers=$(( (RANDOM % 10) + 1 ))  
     num_elements=$(( (RANDOM % 20) + 1 ))   
 

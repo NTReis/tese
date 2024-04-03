@@ -17,9 +17,13 @@ public:
     int getId() const {
         return id;
     }
+    double duration;
+    double getDuration() const {
+        return duration;
+    }
 
     // Constructor
-    Task(int task_id) : id(task_id) {
+    Task(int task_id, TaskType type, int duration) : id(task_id), regular(type), duration(duration) {
         setRandomRegular();
     }
 
@@ -27,25 +31,47 @@ public:
         return regular ? Regular : Irregular;
     }
 
+
     void run(double frequency) {
         
         if (regular) {
             TaskType type = Regular;
-            std::cout << "Regular task " << id << "\n";
-            usleep(200*frequency);
+            std::cout << "Regular task " << id << ": \n";
+            duration = 200;
+            usleep(duration*frequency);
+
         } else {
             TaskType type = Irregular;
-            std::cout << "Irregular task " << id << ": ";
+            std::cout << "Irregular task " << id << ": \n";
             std::random_device rd;
             std::mt19937 gen(rd());
             std::normal_distribution<double> distribution(0.51, 0.5);
 
             double random_value = std::abs(distribution(gen));
-            usleep(static_cast<int>(random_value * 200)*frequency);
+            duration = random_value * 200;
+            
+            usleep(static_cast<int>(duration*frequency));
 
-            std::cout << random_value << "\n";
+
         }
     }
+
+    void runfromfile(double frequency) {
+        
+        if (regular) {
+            
+            std::cout << "Regular task " << id << ": " << duration <<  "\n";
+            usleep(duration*frequency);
+
+        } else {
+
+            std::cout << "Irregular task " << id << ": " << duration << "\n";
+        
+            usleep(duration*frequency);
+
+        }
+    }
+    
 
 private:
     void setRandomRegular() {
@@ -59,67 +85,3 @@ private:
 
 #endif
 
-// #ifndef TASK_H
-// #define TASK_H
-
-// #include <iostream>
-// #include <random>
-// #include <unistd.h>
-
-// enum TaskType {
-//     Regular,
-//     Irregular
-// };
-
-// class Task {
-// public:
-//     int id;
-
-//     // Constructor with an optional parameter to set the task type
-//     Task(int task_id, TaskType type = Regular) : id(task_id), type(type) {
-//         if (type == Regular) {
-//             setRegular();
-//         } else {
-//             setIrregular();
-//         }
-//     }
-
-//     TaskType getType() const {
-//         return type;
-//     }
-
-//     int getId() const {
-//         return id;
-//     }
-
-//     void run(double frequency) {
-//         std::cout << "Task " << id << " (" << (type == Regular ? "Regular" : "Irregular") << "): ";
-
-//         if (type == Irregular) {
-//             std::random_device rd;
-//             std::mt19937 gen(rd());
-//             std::normal_distribution<double> distribution(0.51, 0.5);
-
-//             double random_value = std::abs(distribution(gen));
-//             usleep(static_cast<int>(random_value * 200) * frequency);
-
-//             std::cout << random_value << "\n";
-//         } else {
-//             std::cout << "Executing regular task\n";
-//             usleep(200 * frequency);
-//         }
-//     }
-
-// private:
-//     TaskType type;
-
-//     void setRegular() {
-//         type = Regular;
-//     }
-
-//     void setIrregular() {
-//         type = Irregular;
-//     }
-// };
-
-// #endif

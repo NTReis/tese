@@ -147,7 +147,7 @@ void producer(int id, int elem) {
 }
 
 
-void scheduler(int consumers) {
+void scheduler() {
     
     while (!producersFinished) {
         std::this_thread::sleep_for(std::chrono::microseconds(10)); // Sleep to prevent race conditions
@@ -163,14 +163,15 @@ void scheduler(int consumers) {
         //std::cout << "LOCK" << std::endl;
             
         int totalTasks = taskBuffer.size();
-        int consumer_workload = totalTasks / consumers;
-        int consumer_remainder = totalTasks % consumers;
+        int totalConsumers = consumerlist.size();
+        int consumer_workload = totalTasks / totalConsumers;
+        int consumer_remainder = totalTasks % totalConsumers;
 
 
 
         lock.unlock();
 
-        for (int i = 0; i < consumers; ++i) {
+        for (int i = 0; i < totalConsumers; ++i) {
             int sharedtask = consumer_workload + (i < consumer_remainder ? 1 : 0);
 
             Consumer& cons = consumerlist[i];
@@ -265,7 +266,8 @@ void consumer(int id) {
 //ele tem na mesma o seu buffer com as tarefas e tem depois o workload com o numero de tarefas para consumir, eu tentei fazer tudo só com um buffer mas dava sempre erro ou deadlock então desisti e mudei para isto 
 
 int main(int argc, char* argv[]) {
-    if (argc != 5) {
+    
+if (argc != 5) {
         std::cerr << "Usage: " << argv[0] << " <num_consumers> <num_cpu> <num_producers> <num_elements>\n";
         return 1;
     }
@@ -274,7 +276,6 @@ int main(int argc, char* argv[]) {
     int cpu = std::stoi(argv[2]);
     int producers= std::stoi(argv[3]);
     int elem = std::stoi(argv[4]);
-
 
 
     
@@ -323,10 +324,10 @@ int main(int argc, char* argv[]) {
 
 
 
-    std::thread schedulerThread(scheduler, consumers);
+    std::thread schedulerThread(scheduler);
         
 
-    for (int i = 0; i < consumers; ++i) {
+    for (int i = 0; i < consumerlist.size(); ++i) {
         consumerThreads[i] = std::thread(consumer, i);
     }
 
@@ -349,7 +350,7 @@ int main(int argc, char* argv[]) {
 
     schedulersFinished=true;
 
-    for (int i = 0; i < consumers; i++) {
+    for (int i = 0; i < consumerlist.size(); i++) {
         consumerThreads[i].join();
     }
 

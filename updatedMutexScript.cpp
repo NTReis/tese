@@ -233,14 +233,24 @@ void consumer(int id) {
             
             std::cout << "Consumer" << id << ": " ;
 
+            // if (cons.getType() == 0) {
+
+            //     std::cout << "CPU: " << std::endl;
+            // } else { 
+            //     std::cout << "GPU: " << std::endl;
+            // }
+
+
             double clk_frq = cons.getFreq();
 
             
 
             //task.run(clk_frq); //se usar producer tem que ser assim, caso contrário tem que se usar 
             task.runfromfile(clk_frq);
+            
 
-            //std::cout << clk_frq << " Hz\n";
+
+                
 
             --workload;
 
@@ -255,25 +265,26 @@ void consumer(int id) {
 //ele tem na mesma o seu buffer com as tarefas e tem depois o workload com o numero de tarefas para consumir, eu tentei fazer tudo só com um buffer mas dava sempre erro ou deadlock então desisti e mudei para isto 
 
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " <num_consumers> <num_producers> <num_elements>\n";
+    if (argc != 5) {
+        std::cerr << "Usage: " << argv[0] << " <num_consumers> <num_cpu> <num_producers> <num_elements>\n";
         return 1;
     }
 
     int consumers= std::stoi(argv[1]);
-    int producers= std::stoi(argv[2]);
-    int elem = std::stoi(argv[3]);
+    int cpu = std::stoi(argv[2]);
+    int producers= std::stoi(argv[3]);
+    int elem = std::stoi(argv[4]);
 
 
 
     
 
-    saveworkersFile(consumers, 2); // Save the workers to a file with the number of consumers and the number of CPU workers
+    //saveworkersFile(consumers, cpu); // Save the workers to a file with the number of consumers and the number of CPU workers
     loadworkersFile();
 
  
 
-    savetaskFile(elem);
+    //savetaskFile(elem);
     loadtaskFile();
 
     elem = taskBuffer.size();

@@ -1,3 +1,4 @@
+//g++ testing.cpp -o engine -lpthread
 
 #include <iostream>
 #include <queue>
@@ -19,8 +20,9 @@ std::deque<Task> taskBuffer;
 std::deque<Consumer> consumerlist;
 std::condition_variable cv;
 std::condition_variable producer_cv;  // new condition variable for the scheduler
-std::atomic<bool> producersFinished = false;
-std::atomic<bool> schedulersFinished = false;
+std::atomic<bool> producersFinished=false;
+std::atomic<bool> schedulersFinished=false;
+std::atomic<bool> useProducer=false;
 int globalTaskId = 0;  // Global variable to store the task ID
 
 
@@ -54,8 +56,8 @@ void savetaskFile(int elem) {
 }
 
 
-void loadtaskFile() {
-    std::ifstream file("tasks.txt");
+void loadtaskFile(const std::string& pathTaskFile) {
+    std::ifstream file(pathTaskFile);
     if (file.is_open()) {
         int id;
         int type;
@@ -109,8 +111,8 @@ void saveworkersFile(int consumers, int cpu) {
     file.close();
 }
 
-void loadworkersFile() {
-    std::ifstream file("workers.txt");
+void loadworkersFile(const std::string& pathWorkerFile) {
+    std::ifstream file(pathWorkerFile);
     if (file.is_open()) {
         int id;
         int type; // Change the type to an integer.
@@ -195,8 +197,7 @@ void scheduler() {
                 std::unique_lock<std::mutex> workloadlock(workloadMutex);
 
                 cons.wrkld = sharedtask;
-
-               
+              
 
                 workloadlock.unlock();
                 
@@ -244,17 +245,15 @@ void consumer(int id) {
 
             double clk_frq = cons.getFreq();
 
+            if (useProducer==true) {
+                task.run(clk_frq); //se usar producer tem que ser assim, caso contrário tem que se usar 
+            } else {
+                task.runfromfile(clk_frq);
+            }
+
             
-
-            //task.run(clk_frq); //se usar producer tem que ser assim, caso contrário tem que se usar 
-            task.runfromfile(clk_frq);
-            
-
-
-                
 
             --workload;
-
             
         }
 
@@ -267,91 +266,117 @@ void consumer(int id) {
 
 int main(int argc, char* argv[]) {
     
-if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " <num_consumers> <num_cpu> <num_producers> <num_elements>\n";
+    if (argc < 3) {
+        std::cerr << "Error: No command provided.\n";
+        std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -p pathworkerfiles pathproducersfile]\n";;
         return 1;
     }
 
-    int consumers= std::stoi(argv[1]);
-    int cpu = std::stoi(argv[2]);
-    int producers= std::stoi(argv[3]);
-    int elem = std::stoi(argv[4]);
+    std::string command = argv[1];
+    if (command == "-n" && argc == 6) {
+        int elem = std::stoi(argv[2]);
+        int consumers = std::stoi(argv[3]);
+        int cpu = std::stoi(argv[4]);
+        int producers = std::stoi(argv[5]);
+        saveworkersFile(consumers, cpu);
+        loadworkersFile("workers.txt");
+        useProducer=true;
 
+        int consumer_workload = (elem / consumers); 
+        int producer_workload = (elem / producers);
+        int producer_remainder = elem % producers;
 
-    
-
-    //saveworkersFile(consumers, cpu); // Save the workers to a file with the number of consumers and the number of CPU workers
-    loadworkersFile();
-
- 
-
-    //savetaskFile(elem);
-    loadtaskFile();
-
-    elem = taskBuffer.size();
-
-
-
-    int consumer_workload = (elem / consumers); 
-    int producer_workload = (elem / producers);
-    int producer_remainder = elem % producers;
-
-    
-
-    if (consumer_workload == 0) {
-        std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
-        consumers = elem;
-    } 
-    if (producer_workload == 0) {
-        std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
-        producers = elem;
-    }
-
-
-    //when loaded fromfiles i comment the producers
-
-    //std::thread producerThreads[producers];
-
-
-    std::thread consumerThreads[consumers];
-
-
-
-    // for (int i = 0; i < producers; ++i) {
-    //     int workload = producer_workload + (i < producer_remainder ? 1 : 0);
-    //     producerThreads[i] = std::thread(producer, i, workload);
-    // }
-
-
-
-    std::thread schedulerThread(scheduler);
         
 
-    for (int i = 0; i < consumerlist.size(); ++i) {
-        consumerThreads[i] = std::thread(consumer, i);
-    }
+        if (consumer_workload == 0) {
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            consumers = elem;
+        } 
+        if (producer_workload == 0) {
+            std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
+            producers = elem;
+        }
 
- 
+        std::thread producerThreads[producers];
 
-    // for (int i = 0; i < producers; i++) {
-    //     producerThreads[i].join();
-    // }
+        std::thread consumerThreads[consumers];
 
 
+        for (int i = 0; i < producers; ++i) {
+            int workload = producer_workload + (i < producer_remainder ? 1 : 0);
+            producerThreads[i] = std::thread(producer, i, workload);
+        }
 
-    producersFinished = true;
+        std::thread schedulerThread(scheduler);
+            
 
-    //producer acabava depois do scheduler começar então meti aqui a função notify_one em vez de estar no producer
-    //std::cout << "UNLOCK" << std::endl;
-    producer_cv.notify_one();
-    
- 
-    schedulerThread.join();
+        for (int i = 0; i < consumers; ++i) {
+            consumerThreads[i] = std::thread(consumer, i);
+        }
 
-    schedulersFinished=true;
+        
+        for (int i = 0; i < producers; i++) {
+            producerThreads[i].join();
+        }
 
-    for (int i = 0; i < consumerlist.size(); i++) {
-        consumerThreads[i].join();
+        producersFinished = true;
+
+        producer_cv.notify_one();
+        
+        schedulerThread.join();
+
+        schedulersFinished=true;
+
+        for (int i = 0; i < consumers; i++) {
+            consumerThreads[i].join();
+        }
+       
+
+    } else if (command == "-p" && argc == 4) {
+        std::string pathWorkerFile = argv[2];
+        std::string pathTaskFile = argv[3];
+        loadworkersFile(pathWorkerFile);
+        loadtaskFile(pathTaskFile);
+
+        int elem = taskBuffer.size();
+        int consumers = consumerlist.size();
+
+
+        int consumer_workload = (elem / consumers); 
+
+        if (consumer_workload == 0) {
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            consumers = elem;
+        } 
+
+
+        std::thread consumerThreads[consumers];
+
+        std::thread schedulerThread(scheduler);
+            
+
+        for (int i = 0; i < consumers; ++i) {
+            consumerThreads[i] = std::thread(consumer, i);
+        }
+
+
+        producersFinished = true;
+
+        producer_cv.notify_one();
+            
+        schedulerThread.join();
+
+        schedulersFinished=true;
+
+        for (int i = 0; i < consumers; i++) {
+            consumerThreads[i].join();
+        }
+
+
+    } else {
+        std::cerr << "Error: Invalid command or incorrect number of arguments.\n";
+        std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -p pathworkerfiles pathproducersfile]\n";;
+        return 1;
     }
 
 

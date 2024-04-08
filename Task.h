@@ -36,13 +36,13 @@ public:
         
         if (regular) {
             TaskType type = Regular;
-            std::cout << "Regular task " << id << ": \n";
             duration = 200;
+            std::cout << "Regular task " << id << ": " << duration << "\n";
             usleep(duration*frequency);
 
         } else {
             TaskType type = Irregular;
-            std::cout << "Irregular task " << id << ": \n";
+            std::cout << "Irregular task " << id << ": ";
             std::random_device rd;
             std::mt19937 gen(rd());
             std::normal_distribution<double> distribution(0.51, 0.5);
@@ -50,6 +50,8 @@ public:
             double random_value = std::abs(distribution(gen));
             duration = random_value * 200;
             
+            std::cout << duration << "\n";
+
             usleep(static_cast<int>(duration*frequency));
 
 

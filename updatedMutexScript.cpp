@@ -1,5 +1,3 @@
-//g++ testing.cpp -o engine -lpthread
-
 #include <iostream>
 #include <queue>
 #include <thread>

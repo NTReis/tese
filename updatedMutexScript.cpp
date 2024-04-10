@@ -147,7 +147,7 @@ void producer(int id, int elem) {
 }
 
 
-void scheduler() {
+void scheduler(int totalConsumers) {
     
     while (!producersFinished) {
         std::this_thread::sleep_for(std::chrono::microseconds(10)); // Sleep to prevent race conditions
@@ -163,13 +163,14 @@ void scheduler() {
         //std::cout << "LOCK" << std::endl;
             
         int totalTasks = taskBuffer.size();
-        int totalConsumers = consumerlist.size();
+        //int totalConsumers = consumerlist.size();
         int consumer_workload = totalTasks / totalConsumers;
         int consumer_remainder = totalTasks % totalConsumers;
 
 
 
         lock.unlock();
+
 
         for (int i = 0; i < totalConsumers; ++i) {
             int sharedtask = consumer_workload + (i < consumer_remainder ? 1 : 0);
@@ -314,7 +315,7 @@ int main(int argc, char* argv[]) {
             producerThreads[i] = std::thread(producer, i, workload);
         }
 
-        std::thread schedulerThread(scheduler);
+        std::thread schedulerThread(scheduler, consumers);
             
 
         for (int i = 0; i < consumers; ++i) {
@@ -359,7 +360,7 @@ int main(int argc, char* argv[]) {
 
         std::thread consumerThreads[consumers];
 
-        std::thread schedulerThread(scheduler);
+        std::thread schedulerThread(scheduler, consumers);
             
 
         for (int i = 0; i < consumers; ++i) {
@@ -406,7 +407,7 @@ int main(int argc, char* argv[]) {
 
         std::thread consumerThreads[consumers];
 
-        std::thread schedulerThread(scheduler);
+        std::thread schedulerThread(scheduler, consumers);
             
 
         for (int i = 0; i < consumers; ++i) {
@@ -459,7 +460,7 @@ int main(int argc, char* argv[]) {
             producerThreads[i] = std::thread(producer, i, workload);
         }
 
-        std::thread schedulerThread(scheduler);
+        std::thread schedulerThread(scheduler, consumers);
             
 
         for (int i = 0; i < consumers; ++i) {

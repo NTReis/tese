@@ -1,0 +1,104 @@
+#ifndef TASK_H
+#define TASK_H
+
+#include <iostream>
+#include <random>
+#include <unistd.h>
+
+enum TaskType {
+    Regular,
+    Irregular
+};
+
+class Task {
+public:
+    int id;
+    int regular;
+    int getId() const {
+        return id;
+    }
+    double duration;
+    double getDuration() const {
+        return duration;
+    }
+    TaskType getType() const {
+        return regular ? Regular : Irregular;
+    }
+
+  
+  
+    Task() = default;
+
+    ~Task() = default;
+
+    Task& operator=(const Task& other) = default;
+
+    Task(const Task& other){
+        id = other.getId(); 
+        duration = other.getDuration();
+        regular = other.getType();
+
+    }
+
+
+    Task(int task_id, TaskType type, int duration) : id(task_id), regular(type), duration(duration) {
+        setRandomRegular();
+    }
+
+
+
+    void run(double frequency) {
+        
+        if (regular) {
+            TaskType type = Regular;
+            duration = 200;
+            std::cout << "Regular task " << id << ": " << duration << "\n";
+            usleep(duration*frequency);
+
+        } else {
+            TaskType type = Irregular;
+            std::cout << "Irregular task " << id << ": ";
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::normal_distribution<double> distribution(0.51, 0.5);
+
+            double random_value = std::abs(distribution(gen));
+            duration = random_value * 200;
+            
+            std::cout << duration << "\n";
+
+            usleep(static_cast<int>(duration*frequency));
+
+
+        }
+    }
+
+    void runfromfile(double frequency) {
+        
+        if (regular) {
+            
+            std::cout << "Regular task " << id << ": " << duration <<  "\n";
+            usleep(duration*frequency);
+
+        } else {
+
+            std::cout << "Irregular task " << id << ": " << duration << "\n";
+        
+            usleep(duration*frequency);
+
+        }
+    }
+    
+
+private:
+    void setRandomRegular() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<int> distribution(0, 1);
+
+        regular = distribution(gen);  // 0 corresponds to false, 1 corresponds to true
+    }
+};
+
+#endif
+

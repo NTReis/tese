@@ -16,6 +16,7 @@
 
 
 std::mutex idMutex;    // Mutex to protect the increment operation for globalTaskId
+std::mutex printMutex; // Mutex to protect the print operation
 boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
 std::vector<Consumer> consumerlist;
 //std::condition_variable cv;
@@ -198,10 +199,10 @@ void consumer (int id){
     while (workload > 0) {
         if (!cons.isTaskBufferEmpty()) {
             //Task* taskPtr;
-               Task* taskPtr = cons.popTask();
+                Task* taskPtr = cons.popTask();
 
                 
-
+                std::lock_guard<std::mutex> lock(printMutex); //Coloquei aqui para proteger o std::cout senão ficava tudo scrambled, estavam varios threads a escrever ao mesmo tempo
                 std::cout << "Consumer " << cons.getId() << ": ";
 
                 double clk_frq = cons.getFreq();
@@ -214,10 +215,12 @@ void consumer (int id){
                         taskPtr->runfromfile(clk_frq);
                     }
                 }
+                
+                
 
-               delete taskPtr;
+                delete taskPtr;
 
-               --workload;
+                --workload;
                     
         }
 

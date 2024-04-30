@@ -105,6 +105,8 @@ public:
         }
     }
 
+    //não dá para aceder ao indice do taskBufferConsumer então criei uma cópia e copio tudo de uma vez
+
 
 
     Consumer(int id, ConsumerType type, double frequency) 

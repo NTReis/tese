@@ -42,6 +42,7 @@ public:
 
     }
 
+    bool needMoreTasks = false;
     ConsumerType type;
     int id;
     double frequency;
@@ -61,6 +62,10 @@ public:
 
     int getWrkld() const {
         return wrkld;
+    }
+
+    bool consBufferFlag() const {
+        return needMoreTasks;
     }
 
 
@@ -99,7 +104,7 @@ public:
 
 
     Consumer(const Consumer& other) : 
-    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), taskBufferConsumer(128), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
+    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), needMoreTasks(other.needMoreTasks), taskBufferConsumer(128), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
     for (Task* task : taskBufferConsumerCopy) {
             taskBufferConsumer.push(task);
         }

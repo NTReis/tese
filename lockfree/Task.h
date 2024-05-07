@@ -26,7 +26,6 @@ public:
     }
 
   
-  
     Task() = default;
 
     ~Task() = default;

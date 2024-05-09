@@ -167,8 +167,8 @@ void distributeTasks(Consumer& cons, int chunkSize) {
             //cons.wrkld +=1;
 
         }
-    }   if (cons.needMoreTasks) {
-            cons.needMoreTasks = false;
+    }   if (cons.getNeedMoreTasks()){
+            cons.setNeedMoreTasks(false);
         }
 }
 
@@ -195,17 +195,17 @@ void scheduler() {
 
         for (int i = 0; i < totalConsumers; ++i){
             Consumer& cons = consumerlist[i];
-            if (cons.consBufferFlag()  && totalTasks >= chunkSize){
+            if (cons.getNeedMoreTasks()  && totalTasks >= chunkSize){
                 distributeTasks(cons, chunkSize);
                 totalTasks -= chunkSize;
-                if (cons.needMoreTasks) {
-                    cons.needMoreTasks = false;
+                if (cons.getNeedMoreTasks()) {
+                    cons.setNeedMoreTasks(false);
                 }
-            } else if (cons.consBufferFlag() && totalTasks < chunkSize){
+            } else if (cons.getNeedMoreTasks() && totalTasks < chunkSize){
                 distributeTasks(cons, totalTasks);
                 totalTasks = 0;
-            }  if (cons.needMoreTasks) {
-                    cons.needMoreTasks = false;
+            }  if (cons.getNeedMoreTasks()) {
+                    cons.setNeedMoreTasks(false);
                 }
         }
         
@@ -214,8 +214,6 @@ void scheduler() {
     schedulersFinished=true;
 
 }
-
-
 
 
 
@@ -244,7 +242,7 @@ void consumer (int id){
 
             if (taskPtr != nullptr){
 
-                //std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                 if (useProducer) {
                    taskPtr->run(clk_frq);
@@ -258,7 +256,7 @@ void consumer (int id){
             --cons.wrkld;
 
             if (cons.wrkld < flag) {
-                cons.needMoreTasks = true;
+                cons.setNeedMoreTasks(true);
             }
 
         }        

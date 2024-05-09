@@ -10,6 +10,7 @@
 #include "Task.h" 
 #include <vector>
 #include "SPSCQueue.h"
+#include <mutex>
 
 
 enum ConsumerType {
@@ -25,6 +26,9 @@ private:
     boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128};
 
     std::vector<Task*> taskBufferConsumerCopy;
+
+    bool needMoreTasks = false;
+    std::mutex mtx;
 
 
 
@@ -42,7 +46,6 @@ public:
 
     }
 
-    bool needMoreTasks = false;
     ConsumerType type;
     int id;
     double frequency;
@@ -64,8 +67,17 @@ public:
         return wrkld;
     }
 
-    bool consBufferFlag() const {
-        return needMoreTasks;
+    void setNeedMoreTasks(bool value) {
+        mtx.lock();
+        needMoreTasks = value;
+        mtx.unlock();
+    }
+
+    bool getNeedMoreTasks() {
+        mtx.lock();
+        bool value = needMoreTasks;
+        mtx.unlock();
+        return value;
     }
 
 

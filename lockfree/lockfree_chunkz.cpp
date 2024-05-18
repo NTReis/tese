@@ -38,19 +38,24 @@ void savetaskFile(int elem) {
         std::uniform_int_distribution<> distr(0, 1);
 
         int type = distr(gen);  // Randomly assign type as Regular (0) or Irregular (1)
-        double duration = 0;
+        double instructions = 0;
+        double cpi = 0;
 
         if (type == Regular) {
-            duration = 200;
+            std::normal_distribution<double> distribution(0.51, 0.5);
+            cpi = std::abs(distribution(gen));
+            instructions = 200;
+            
         } else {
             std::normal_distribution<double> distribution(0.51, 0.5);
             double random_value = std::abs(distribution(gen));
-            duration = random_value * 200;
+            cpi = std::abs(distribution(gen));
+            instructions = random_value * 200;
         }
 
-        Task task(id, static_cast<TaskType>(type), duration);
+        Task task(id, static_cast<TaskType>(type), instructions, cpi);
         int typeStr = task.getType();
-        file << id << ' ' << typeStr << ' ' << task.getDuration() << '\n';
+        file << id << ' ' << typeStr << ' ' << task.getInstructions() << task.getCPI() <<'\n';
     }
     } else {
         std::cerr << "Error: Could not open tasks.txt\n";
@@ -64,11 +69,12 @@ void loadtaskFile(const std::string& pathTaskFile) {
     if (file.is_open()) {
         int id;
         int type;
-        double duration;
-        while (file >> id >> type >> duration) {
+        double instructions;
+        double cpi;
+        while (file >> id >> type >> instructions >> cpi) {
             type = type == 0 ? Regular : Irregular;
 
-            taskBuffer.push(new Task(id, static_cast<TaskType>(type), duration));
+            taskBuffer.push(new Task(id, static_cast<TaskType>(type), instructions, cpi));
             taskCount++;
 
             std::cout << "Task " << id << " loaded\n";
@@ -140,7 +146,7 @@ void producer(int id, int elem) {
         int taskId = globalTaskId++;  // Get the current ID and increment it
 
 
-        taskBuffer.push(new Task(taskId, Regular, 0));
+        taskBuffer.push(new Task(taskId, Regular, 0, 0));
         taskCount++;
             
         std::cout << "Producer" << id << ": " << taskId << std::endl;

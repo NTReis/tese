@@ -17,9 +17,14 @@ public:
     int getId() const {
         return id;
     }
-    double duration;
-    double getDuration() const {
-        return duration;
+    double instructions;
+    double getInstructions() const {
+        return instructions;
+    }
+
+    double cpi;
+    double getCPI() const {
+        return cpi;
     }
     TaskType getType() const {
         return regular ? Regular : Irregular;
@@ -34,13 +39,14 @@ public:
 
     Task(const Task& other){
         id = other.getId(); 
-        duration = other.getDuration();
+        instructions = other.getInstructions();
+        cpi = other.getCPI();
         regular = other.getType();
 
     }
 
 
-    Task(int task_id, TaskType type, int duration) : id(task_id), regular(type), duration(duration) {
+    Task(int task_id, TaskType type, int instructions, double cpi) : id(task_id), regular(type), instructions(instructions), cpi(cpi) {
         setRandomRegular();
     }
 
@@ -50,7 +56,9 @@ public:
         
         if (regular) {
             TaskType type = Regular;
-            duration = 200;
+            instructions = 200;
+            cpi = 1.0;
+            double duration = instructions * cpi;
             std::cout << "Regular task " << id << ": " << duration << "\n";
             usleep(duration*frequency);
 
@@ -62,8 +70,12 @@ public:
             std::normal_distribution<double> distribution(0.51, 0.5);
 
             double random_value = std::abs(distribution(gen));
-            duration = random_value * 200;
+            double cpi = std::abs(distribution(gen));
+
+            instructions = random_value * 200;
             
+            double duration = instructions * cpi;
+
             std::cout << duration << "\n";
 
             usleep(static_cast<int>(duration*frequency));
@@ -75,15 +87,19 @@ public:
     void runfromfile(double frequency) {
         
         if (regular) {
+
+            double duration = instructions * cpi;
             
             std::cout << "Regular task " << id << ": " << duration <<  "\n";
-            usleep(duration*frequency);
+            usleep(duration/frequency);
 
         } else {
 
+            double duration = instructions * cpi;
+
             std::cout << "Irregular task " << id << ": " << duration << "\n";
         
-            usleep(duration*frequency);
+            usleep(duration/frequency);
 
         }
     }

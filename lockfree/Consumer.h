@@ -46,6 +46,20 @@ public:
 
     }
 
+    void setNeedMoreTasks(bool value) {
+        mtx.lock();
+        needMoreTasks = value;
+        mtx.unlock();
+    }
+
+    bool getNeedMoreTasks() {
+        mtx.lock();
+        bool value = needMoreTasks;
+        mtx.unlock();
+        return value;
+    }
+
+
     ConsumerType type;
     int id;
     double frequency;
@@ -67,18 +81,6 @@ public:
         return wrkld;
     }
 
-    void setNeedMoreTasks(bool value) {
-        mtx.lock();
-        needMoreTasks = value;
-        mtx.unlock();
-    }
-
-    bool getNeedMoreTasks() {
-        mtx.lock();
-        bool value = needMoreTasks;
-        mtx.unlock();
-        return value;
-    }
 
 
     // Construtor
@@ -177,3 +179,4 @@ public:
 };
 
 #endif
+

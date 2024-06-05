@@ -27,7 +27,8 @@ private:
 
     std::vector<Task*> taskBufferConsumerCopy;
 
-    bool needMoreTasks = false;
+    bool need_more_tasks = false;
+    
     std::mutex mtx;
 
 
@@ -35,6 +36,7 @@ private:
 public:
 
     void copyTasks(){
+        std::lock_guard<std::mutex> lock(mtx);
 
         int size = taskBufferConsumer.read_available();
         Task* task;
@@ -45,16 +47,16 @@ public:
         }
 
     }
-
+ 
     void setNeedMoreTasks(bool value) {
         mtx.lock();
-        needMoreTasks = value;
+        need_more_tasks = value;
         mtx.unlock();
     }
 
     bool getNeedMoreTasks() {
         mtx.lock();
-        bool value = needMoreTasks;
+        bool value = need_more_tasks;
         mtx.unlock();
         return value;
     }
@@ -94,16 +96,6 @@ public:
             delete task; 
         }
     }
-
-
-//     RIGTORP
-//     ~Consumer() {
-//     while (!taskBufferConsumer.empty()) {
-//         Task** taskPtr = taskBufferConsumer.front();
-//         taskBufferConsumer.pop();
-//         delete *taskPtr; 
-//     }
-//    }
         
 
     Consumer& operator=(const Consumer& other) = default;
@@ -118,7 +110,7 @@ public:
 
 
     Consumer(const Consumer& other) : 
-    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), needMoreTasks(other.needMoreTasks), taskBufferConsumer(128), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
+    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), need_more_tasks(other.need_more_tasks), taskBufferConsumer(128), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
     for (Task* task : taskBufferConsumerCopy) {
             taskBufferConsumer.push(task);
         }
@@ -134,7 +126,9 @@ public:
 
 
     bool pushTask(Task* task) {
+        mtx.lock();
         taskBufferConsumerCopy.push_back(task);
+        mtx.unlock();
         return taskBufferConsumer.push(task);
     }
 
@@ -155,6 +149,15 @@ public:
                 return nullptr;
             }
     }
+
+    //     RIGTORP
+    //     ~Consumer() {
+    //     while (!taskBufferConsumer.empty()) {
+    //         Task** taskPtr = taskBufferConsumer.front();
+    //         taskBufferConsumer.pop();
+    //         delete *taskPtr; 
+    //     }
+    //    }
 
     // bool pushTask(Task* task) {
     // bool success = taskBufferConsumer.push(task);
@@ -179,4 +182,3 @@ public:
 };
 
 #endif
-

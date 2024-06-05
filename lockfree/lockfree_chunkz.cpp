@@ -12,6 +12,7 @@
 #include <fstream>
 #include "Task.h"
 #include "Consumer.h"
+#include "Scheduler.h"
 #include <boost/lockfree/spsc_queue.hpp>
 
 
@@ -23,10 +24,12 @@ std::vector<Consumer> consumerlist;
 //std::condition_variable producer_cv;  // new condition variable for the scheduler
 std::atomic<bool> producersFinished=false;
 std::atomic<bool> schedulersFinished=false;
+std::atomic<bool> schedulersEnded=false;
 std::atomic<bool> useProducer=false;
 int globalTaskId = 0;  // Global variable to store the task ID
 std::atomic<int> taskCount=0;
 std::atomic<int> consCount=0;
+Scheduler test;
 
 
 void savetaskFile(int elem) {
@@ -72,12 +75,13 @@ void loadtaskFile(const std::string& pathTaskFile) {
         double instructions;
         double cpi;
         while (file >> id >> type >> instructions >> cpi) {
-            type = type == 0 ? Regular : Irregular;
+            TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
 
-            taskBuffer.push(new Task(id, static_cast<TaskType>(type), instructions, cpi));
+            taskBuffer.push(new Task(id, taskType, instructions, cpi));
             taskCount++;
 
-            std::cout << "Task " << id << " loaded\n";
+            std::cout << "Task " << id << " " << taskType << " loaded\n";
+
         }
     } else {
         std::cerr << "Error: Could not open tasks.txt\n";
@@ -139,12 +143,13 @@ void loadworkersFile(const std::string& pathWorkerFile) {
 }
 
 
+
 void producer(int id, int elem) {
 
     for (int i = 0; i < elem; ++i) {
         
         int taskId = globalTaskId++;  // Get the current ID and increment it
-
+     
 
         taskBuffer.push(new Task(taskId, Regular, 0, 0));
         taskCount++;
@@ -156,95 +161,46 @@ void producer(int id, int elem) {
 
 }
 
-void distributeTasks(Consumer& cons, int chunkSize) {
-
-    cons.copyTasks();
-    cons.wrkld += chunkSize;
-
-    std::lock_guard<std::mutex> lock(printMutex); 
-    if (chunkSize > 0){
-        std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << std::endl;
-    }
-    for (int j = 0; j < chunkSize && !taskBuffer.empty(); ++j) {
-        Task* taskPtr;
-        if (taskBuffer.pop(taskPtr)) {
-            cons.pushTask(taskPtr);
-            
-            //cons.wrkld +=1;
-
-        }
-    }   if (cons.getNeedMoreTasks()){
-            cons.setNeedMoreTasks(false);
-        }
-}
 
 
-void scheduler() {
 
-    int totalTasks = taskCount;
-    int chunkSize = 1;
-    int totalConsumers = consumerlist.size();
+void scheduler(){
 
+    int chunkSize = 3;
 
-    for (int i = 0; i < totalConsumers; ++i) {
-        Consumer& cons = consumerlist[i];
-        if (totalTasks >= chunkSize){
-            distributeTasks(cons, chunkSize);
-            totalTasks -= chunkSize;
-        } else {
-            distributeTasks(cons, totalTasks);
-            totalTasks = 0;
-        }
-    } 
+    test.startScheduling(taskCount, chunkSize, consumerlist, taskBuffer);
 
-    while (!taskBuffer.empty()){
-
-        for (int i = 0; i < totalConsumers; ++i){
-            Consumer& cons = consumerlist[i];
-            if (cons.getNeedMoreTasks()  && totalTasks >= chunkSize){
-                distributeTasks(cons, chunkSize);
-                totalTasks -= chunkSize;
-                if (cons.getNeedMoreTasks()) {
-                    cons.setNeedMoreTasks(false);
-                }
-            } else if (cons.getNeedMoreTasks() && totalTasks < chunkSize){
-                distributeTasks(cons, totalTasks);
-                totalTasks = 0;
-            }  if (cons.getNeedMoreTasks()) {
-                    cons.setNeedMoreTasks(false);
-                }
-        }
-        
-    }
-
-    schedulersFinished=true;
+    test.setSchedulersFinished(true);
 
 }
-
 
 
 void consumer (int id){
 
+    #ifdef D_LOL
+                
+    #endif
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Sleep to prevent race conditions
     
 
     Consumer& cons = consumerlist[id];
 
-
+    int i = taskCount;
     int workload = cons.getWrkld(); 
-    double flag = workload * 0.2;
 
-    while (true) { //por alguma razão assim funciona melhor que while (!taskBuffer.empty()) costuma faltar sempre uma task
+    float flag = workload * 0.2;
+
+    while(!test.schedulerFinished() || !cons.isTaskBufferEmpty()) {
 
         if (!cons.isTaskBufferEmpty()){
 
             Task* taskPtr = cons.popTask();
                 
-            std::lock_guard<std::mutex> lock(printMutex); //Coloquei aqui para proteger o std::cout senão ficava tudo scrambled, estavam varios threads a escrever ao mesmo tempo
-            std::cout << "Consumer " << cons.getId() << ": ";
+            std::lock_guard<std::mutex> lock(printMutex); 
+            std::cout << "Consumer " << cons.getId() << ": " ;
 
-            double clk_frq = cons.getFreq();
+            float clk_frq = cons.getFreq();
 
             if (taskPtr != nullptr){
 
@@ -254,26 +210,25 @@ void consumer (int id){
                    taskPtr->run(clk_frq);
                 } else {
                     taskPtr->runfromfile(clk_frq);
-                }
+                    //std::cout << taskPtr->getId() << " " << taskPtr->getType() << "\n";
+                }  
             }
                 
             delete taskPtr;
             
             --cons.wrkld;
 
+
             if (cons.wrkld < flag) {
                 cons.setNeedMoreTasks(true);
             }
 
-        }        
-
-        if (schedulersFinished) {break;}
-
-    }   
+        }         
      
         
-}
+    } 
 
+}
 
 
 void usage() {
@@ -344,13 +299,12 @@ int main(int argc, char* argv[]) {
 
         producersFinished = true;
         
-        schedulerThread.join();
-
-        schedulersFinished=true;
 
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
+
+        schedulerThread.join();
        
 
     } else if (command == "-f" && argc == 4) {
@@ -382,16 +336,13 @@ int main(int argc, char* argv[]) {
 
 
         producersFinished = true;
-
-
-            
-        schedulerThread.join();
-
-        schedulersFinished=true;
+        
 
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
+
+        schedulerThread.join();
 
 
     } else if (command == "-cc" && argc == 5) {
@@ -431,14 +382,11 @@ int main(int argc, char* argv[]) {
         producersFinished = true;
 
 
-            
-        schedulerThread.join();
-
-        schedulersFinished=true;
-
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
+
+        schedulerThread.join();
 
     } else if (command == "-cp" && argc == 5) {
         int elem = std::stoi(argv[2]);
@@ -487,13 +435,13 @@ int main(int argc, char* argv[]) {
 
         producersFinished = true;
         
-        schedulerThread.join();
-
-        schedulersFinished=true;
+              
 
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
+
+        schedulerThread.join();
        
     } else if (command == "-help" && argc == 2) {
         usage();

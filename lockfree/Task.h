@@ -27,8 +27,12 @@ public:
         return cpi;
     }
     TaskType getType() const {
-        return regular ? Regular : Irregular;
+    if (regular == 0) {
+        return TaskType::Regular;
+    } else {
+        return TaskType::Irregular;
     }
+}
 
   
     Task() = default;
@@ -47,19 +51,22 @@ public:
 
 
     Task(int task_id, TaskType type, int instructions, double cpi) : id(task_id), regular(type), instructions(instructions), cpi(cpi) {
-        setRandomRegular();
+        //setRandomRegular();
     }
 
 
 
-    void run(double frequency) {
+    void run(float frequency) {
+
+        setRandomRegular();
         
         if (regular) {
             TaskType type = Regular;
             instructions = 200;
             cpi = 1.0;
-            double duration = instructions * cpi;
-            std::cout << "Regular task " << id << ": " << duration << "\n";
+            float duration = instructions * cpi;
+            std::cout << "Regular task " << id << ": " << duration << "\n" << std::flush;
+            
             usleep(duration*frequency);
 
         } else {
@@ -67,16 +74,16 @@ public:
             std::cout << "Irregular task " << id << ": ";
             std::random_device rd;
             std::mt19937 gen(rd());
-            std::normal_distribution<double> distribution(0.51, 0.5);
+            std::normal_distribution<float> distribution(0.51, 0.5);
 
-            double random_value = std::abs(distribution(gen));
-            double cpi = std::abs(distribution(gen));
+            float random_value = std::abs(distribution(gen));
+            float cpi = std::abs(distribution(gen));
 
             instructions = random_value * 200;
             
-            double duration = instructions * cpi;
+            float duration = instructions * cpi;
 
-            std::cout << duration << "\n";
+            std::cout << duration << "\n" << std::flush;
 
             usleep(static_cast<int>(duration*frequency));
 
@@ -84,22 +91,23 @@ public:
         }
     }
 
-    void runfromfile(double frequency) {
+    void runfromfile(float frequency) {
         
-        if (regular) {
+        if (regular == 0) {
 
-            double duration = instructions * cpi;
+            float duration = (instructions * cpi)/frequency;
             
             std::cout << "Regular task " << id << ": " << duration <<  "\n";
-            usleep(duration/frequency);
+
+            usleep(duration);
 
         } else {
 
-            double duration = instructions * cpi;
+            float duration = (instructions * cpi)/frequency;
 
             std::cout << "Irregular task " << id << ": " << duration << "\n";
         
-            usleep(duration/frequency);
+            usleep(duration);
 
         }
     }

@@ -23,11 +23,21 @@ std::mutex mtx; // Mutex to protect the print operation
 
 bool isTaskBufferEmpty(boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer) {
     return taskBuffer.empty();
+
+
 }
 
 public:
 
+bool schedulers_finished = false;
+
+Scheduler(){
+    }
+
+
 void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+
+    bool flag = true;
     
     cons.copyTasks();
     cons.wrkld += chunkSize;
@@ -36,25 +46,27 @@ void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*
     if (chunkSize > 0){
         std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << std::endl;
     }
-    mtx.unlock(); 
+ 
 
-    for (int j = 0; j < chunkSize; ++j) {
+    for (int j = 0; j < chunkSize && flag; ++j) {
         Task* taskPtr;
         if (taskBuffer.pop(taskPtr)) {
             cons.pushTask(taskPtr);
                         
         } else {
-            break;  // taskBuffer is empty, break the loop
+            flag = false;
+          // taskBuffer is empty, break the loop
         }
-    }  
+    }
+    mtx.unlock();   
     
     
     if (cons.getNeedMoreTasks()){
-            cons.setNeedMoreTasks(false);
+        cons.setNeedMoreTasks(false);
     }
 }
 
-void start_scheduling(int totalTasks, int chunkSize, std::vector<Consumer>& consumerlist, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+void startScheduling(int totalTasks, int chunkSize, std::vector<Consumer>& consumerlist, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
     
     int totalConsumers = consumerlist.size();
 
@@ -70,7 +82,7 @@ void start_scheduling(int totalTasks, int chunkSize, std::vector<Consumer>& cons
         }
     } 
 
-    while (!taskBuffer.empty() && totalTasks > -1){  // Check if there are tasks left
+    while (!taskBuffer.empty() && totalTasks > -1){  // Check if there are tasks left. I have this -1 because for some reason it always starts with 1 task left, but i dont know where it comes from
         for (int i = 0; i < totalConsumers; ++i){
             Consumer& cons = consumerlist[i];
             if (cons.getNeedMoreTasks()  && totalTasks >= chunkSize){
@@ -85,9 +97,26 @@ void start_scheduling(int totalTasks, int chunkSize, std::vector<Consumer>& cons
         }
         
     }
-
+    
 }
 
+void setSchedulersFinished(bool value){
+    mtx.lock();
+    schedulers_finished = value;
+    mtx.unlock();
+}
+
+bool schedulerFinished(){
+
+    mtx.lock();
+
+    bool value = schedulers_finished;
+
+    mtx.unlock();
+
+    return value;
+
+}
 
 };
 

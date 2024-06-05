@@ -14,9 +14,10 @@
 #include "Consumer.h"
 #include "Scheduler.h"
 #include <boost/lockfree/spsc_queue.hpp>
+#include <chrono>
 
 
-std::mutex idMutex;    // Mutex to protect the increment operation for globalTaskId
+std::mutex idMutex; // Mutex to protect the increment operation for globalTaskId
 std::mutex printMutex; // Mutex to protect the print operation
 boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
 std::vector<Consumer> consumerlist;
@@ -143,7 +144,6 @@ void loadworkersFile(const std::string& pathWorkerFile) {
 }
 
 
-
 void producer(int id, int elem) {
 
     for (int i = 0; i < elem; ++i) {
@@ -160,8 +160,6 @@ void producer(int id, int elem) {
 
 
 }
-
-
 
 
 void scheduler(){
@@ -191,6 +189,8 @@ void consumer (int id){
 
     float flag = workload * 0.2;
 
+    auto start = std::chrono::high_resolution_clock::now();
+
     while(!test.schedulerFinished() || !cons.isTaskBufferEmpty()) {
 
         if (!cons.isTaskBufferEmpty()){
@@ -210,6 +210,12 @@ void consumer (int id){
                    taskPtr->run(clk_frq);
                 } else {
                     taskPtr->runfromfile(clk_frq);
+
+                    //ver o tempo desde que começou a consumir
+                    auto now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<float> elapsed = now - start;
+                    std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
+
                     //std::cout << taskPtr->getId() << " " << taskPtr->getType() << "\n";
                 }  
             }

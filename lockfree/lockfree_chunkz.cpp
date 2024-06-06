@@ -45,17 +45,17 @@ void savetaskFile(int elem) {
         std::uniform_int_distribution<> distr(0, 1);
 
         int type = distr(gen);  // Randomly assign type as Regular (0) or Irregular (1)
-        double instructions = 0;
-        double cpi = 0;
+        float instructions = 0;
+        float cpi = 0;
 
         if (type == Regular) {
-            std::normal_distribution<double> distribution(0.51, 0.5);
+            std::normal_distribution<float> distribution(0.51, 0.5);
             cpi = std::abs(distribution(gen));
             instructions = 200;
             
         } else {
-            std::normal_distribution<double> distribution(0.51, 0.5);
-            double random_value = std::abs(distribution(gen));
+            std::normal_distribution<float> distribution(0.51, 0.5);
+            float random_value = std::abs(distribution(gen));
             cpi = std::abs(distribution(gen));
             instructions = random_value * 200;
         }
@@ -75,8 +75,8 @@ void loadtaskFile(const std::string& pathTaskFile) {
     if (file.is_open()) {
         int id;
         int type;
-        double instructions;
-        double cpi;
+        float instructions;
+        float cpi;
         while (file >> id >> type >> instructions >> cpi) {
             TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
 
@@ -99,8 +99,8 @@ void saveworkersFile(int consumers, int cpu) {
         for (int id = 0; id < consumers; ++id) {
             std::random_device rd;
             std::mt19937 gen(rd());
-            std::normal_distribution<double> distribution(0.1, 2);
-            double ret = std::abs(distribution(gen));
+            std::normal_distribution<float> distribution(0.1, 2);
+            float ret = std::abs(distribution(gen));
             ConsumerType type;
 
             if (id < cpu) {
@@ -109,7 +109,7 @@ void saveworkersFile(int consumers, int cpu) {
                 type = ConsumerType::GPU;
             }
 
-            double frequency = ret;
+            float frequency = ret;
 
             if (type == ConsumerType::CPU) {
                 ret *= 1.2;
@@ -132,7 +132,7 @@ void loadworkersFile(const std::string& pathWorkerFile) {
     if (file.is_open()) {
         int id;
         int type; // Change the type to an integer.
-        double frequency;
+        float frequency;
         while (file >> id >> type >> frequency) {
             consumerlist.push_back(Consumer(id, static_cast<ConsumerType>(type), frequency));
             consCount++;
@@ -149,15 +149,37 @@ void producer(int id, int elem) {
     for (int i = 0; i < elem; ++i) {
         
         int taskId = globalTaskId++;  // Get the current ID and increment it
+        for (int id = 0; id < elem; ++id) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distr(0, 1);
+
+        int type = distr(gen);  // Randomly assign type as Regular (0) or Irregular (1)
+        float instructions = 10;
+        float cpi = 10;
+
+        if (type == Regular) {
+            std::normal_distribution<float> distribution(0.51, 0.5);
+            cpi = std::abs(distribution(gen));
+            instructions = 200;
+            
+        } else {
+            std::normal_distribution<float> distribution(0.51, 0.5);
+            float random_value = std::abs(distribution(gen));
+            cpi = std::abs(distribution(gen));
+            instructions = random_value * 200;
+        }
+
+        TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
      
 
-        taskBuffer.push(new Task(taskId, Regular, 0, 0));
+        taskBuffer.push(new Task(id, taskType, instructions, cpi));
         taskCount++;
             
-        std::cout << "Producer" << id << ": " << taskId << std::endl;
+        std::cout << "Producer " << id << ": Task " << taskId << std::endl;
                 
     }
-
+    }
 
 }
 
@@ -215,7 +237,29 @@ void consumer (int id){
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                 if (useProducer) {
-                   taskPtr->run(clk_frq);
+                    float duration = taskPtr->run(clk_frq);
+
+                    
+                    //ver o tempo desde que começou a consumir
+                    auto now = std::chrono::high_resolution_clock::now();
+                    std::chrono::duration<float> elapsed = now - start;
+                    //std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
+
+                    #ifdef D_LOL
+
+                    std::string task_type;
+
+                    if (taskPtr->getType() == 0){task_type = " Regular ";} else {task_type="Irregular";}
+
+                    std::string temp2 = std::to_string(taskPtr->getId()) + "    |  " + task_type + "  | " + std::to_string(duration) + " | " + std::to_string(elapsed.count()) + " seconds\n";
+                    log_precursor.push_back(temp2);
+                    ++log_counter;
+
+                    
+                    #endif
+
+                    
+                   
                 } else {
                     float duration = taskPtr->runfromfile(clk_frq);
 
@@ -461,7 +505,8 @@ int main(int argc, char* argv[]) {
         std::string pathWorkerFile = argv[3];
         int producers = std::stoi(argv[4]);
         useProducer=true;
-        loadworkersFile("workers.txt");
+
+        loadworkersFile(pathWorkerFile);
 
         #ifdef D_LOL
     
@@ -512,7 +557,6 @@ int main(int argc, char* argv[]) {
         producersFinished = true;
         
               
-
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }

@@ -17,10 +17,12 @@
 #include <chrono>
 
 
+
 std::mutex idMutex; // Mutex to protect the increment operation for globalTaskId
 std::mutex printMutex; // Mutex to protect the print operation
 boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
 std::vector<Consumer> consumerlist;
+std::vector<std::string> log_precursor;
 //std::condition_variable cv;
 //std::condition_variable producer_cv;  // new condition variable for the scheduler
 std::atomic<bool> producersFinished=false;
@@ -31,6 +33,7 @@ int globalTaskId = 0;  // Global variable to store the task ID
 std::atomic<int> taskCount=0;
 std::atomic<int> consCount=0;
 Scheduler test;
+int log_counter = 0;
 
 
 void savetaskFile(int elem) {
@@ -67,7 +70,6 @@ void savetaskFile(int elem) {
     file.close();
 }
 
-
 void loadtaskFile(const std::string& pathTaskFile) {
     std::ifstream file(pathTaskFile);
     if (file.is_open()) {
@@ -89,7 +91,6 @@ void loadtaskFile(const std::string& pathTaskFile) {
     }
     file.close();
 }
-
 
 void saveworkersFile(int consumers, int cpu) {
     std::ofstream file("workers.txt");
@@ -143,7 +144,6 @@ void loadworkersFile(const std::string& pathWorkerFile) {
     file.close();
 }
 
-
 void producer(int id, int elem) {
 
     for (int i = 0; i < elem; ++i) {
@@ -161,10 +161,9 @@ void producer(int id, int elem) {
 
 }
 
-
 void scheduler(){
 
-    int chunkSize = 3;
+    int chunkSize = 1;
 
     test.startScheduling(taskCount, chunkSize, consumerlist, taskBuffer);
 
@@ -172,12 +171,8 @@ void scheduler(){
 
 }
 
-
 void consumer (int id){
 
-    #ifdef D_LOL
-                
-    #endif
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Sleep to prevent race conditions
     
@@ -198,6 +193,19 @@ void consumer (int id){
             Task* taskPtr = cons.popTask();
                 
             std::lock_guard<std::mutex> lock(printMutex); 
+
+            #ifdef D_LOL
+
+            std::string consumer_type;
+
+            if (cons.getType() == 0){consumer_type = "CPU";} else {consumer_type="GPU";}
+            
+            std::string temp = "Consumer " + std::to_string(cons.getId()) + "  |       " + consumer_type + "      |    ";
+            log_precursor.push_back(temp);
+            ++log_counter;
+
+            #endif
+
             std::cout << "Consumer " << cons.getId() << ": " ;
 
             float clk_frq = cons.getFreq();
@@ -209,14 +217,27 @@ void consumer (int id){
                 if (useProducer) {
                    taskPtr->run(clk_frq);
                 } else {
-                    taskPtr->runfromfile(clk_frq);
+                    float duration = taskPtr->runfromfile(clk_frq);
 
+                    
                     //ver o tempo desde que começou a consumir
                     auto now = std::chrono::high_resolution_clock::now();
                     std::chrono::duration<float> elapsed = now - start;
-                    std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
+                    //std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
 
-                    //std::cout << taskPtr->getId() << " " << taskPtr->getType() << "\n";
+                    #ifdef D_LOL
+
+                    std::string task_type;
+
+                    if (taskPtr->getType() == 0){task_type = " Regular ";} else {task_type="Irregular";}
+
+                    std::string temp2 = std::to_string(taskPtr->getId()) + "    |  " + task_type + "  | " + std::to_string(duration) + " | " + std::to_string(elapsed.count()) + " seconds\n";
+                    log_precursor.push_back(temp2);
+                    ++log_counter;
+
+                    
+                    #endif
+
                 }  
             }
                 
@@ -229,10 +250,27 @@ void consumer (int id){
                 cons.setNeedMoreTasks(true);
             }
 
+
         }         
      
         
     } 
+
+    #ifdef D_LOL
+    std::ofstream log_file("log.csv");
+    int l = 0;
+
+    if (log_file.is_open()){
+
+        for(int l; l<= log_counter; l++){
+            log_file << log_precursor[l];
+        }
+
+    } else {"Error: Could not access log.csv.\n";}
+
+    log_file.close();
+
+    #endif
 
 }
 
@@ -264,6 +302,14 @@ int main(int argc, char* argv[]) {
         saveworkersFile(consumers, cpu);
         loadworkersFile("workers.txt");
         useProducer=true;
+
+        #ifdef D_LOL
+    
+        log_precursor.push_back("Consumer ID |  Consumer Type | Task ID |  Task Type  |   Duration  |  Ellapsed Time\n");
+        ++log_counter;
+        log_precursor.push_back( " -------------------------------------------------------------------------\n");   
+        
+        #endif
 
         int consumer_workload = (elem / consumers); 
         int producer_workload = (elem / producers);
@@ -334,6 +380,14 @@ int main(int argc, char* argv[]) {
         std::thread consumerThreads[consumers];
 
         std::thread schedulerThread(scheduler);
+
+        #ifdef D_LOL
+    
+        log_precursor.push_back("Consumer ID |  Consumer Type | Task ID |  Task Type  |   Duration  |  Ellapsed Time\n");
+        ++log_counter;
+        log_precursor.push_back( " -------------------------------------------------------------------------\n");   
+        
+        #endif
             
 
         for (int i = 0; i < consumers; ++i) {
@@ -360,6 +414,14 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: The number of consumers is less than the number of CPU consumers. The number of cpu's will be reduced from " << cpu << " to " << consumers << ".\n" << std::endl;
             cpu=consumers;
         }
+
+        #ifdef D_LOL
+    
+        log_precursor.push_back("Consumer ID |  Consumer Type | Task ID |  Task Type  |   Duration  |  Ellapsed Time\n");
+        ++log_counter;
+        log_precursor.push_back( " -------------------------------------------------------------------------\n");   
+        
+        #endif
         
         saveworkersFile(consumers, cpu);
         loadworkersFile("workers.txt");
@@ -400,6 +462,14 @@ int main(int argc, char* argv[]) {
         int producers = std::stoi(argv[4]);
         useProducer=true;
         loadworkersFile("workers.txt");
+
+        #ifdef D_LOL
+    
+        log_precursor.push_back("Consumer ID |  Consumer Type | Task ID |  Task Type  |   Duration  |  Ellapsed Time\n");
+        ++log_counter;
+        log_precursor.push_back( " -------------------------------------------------------------------------\n");   
+        
+        #endif
 
         int consumers = consCount;
 

@@ -56,20 +56,29 @@ public:
 
 
 
-    void run(float frequency) {
+    float run(float frequency) {
 
         setRandomRegular();
         
-        if (regular) {
+        if (regular==0) {
+
+            
+
             TaskType type = Regular;
             instructions = 200;
             cpi = 1.0;
-            float duration = instructions * cpi;
+            float duration = (instructions * cpi)/frequency;
+
             std::cout << "Regular task " << id << ": " << duration << "\n" << std::flush;
             
-            usleep(duration*frequency);
+            usleep(duration);
+
+            return(duration);
 
         } else {
+
+            
+
             TaskType type = Irregular;
             std::cout << "Irregular task " << id << ": ";
             std::random_device rd;
@@ -81,17 +90,19 @@ public:
 
             instructions = random_value * 200;
             
-            float duration = instructions * cpi;
+            float duration = (instructions * cpi)/frequency;
 
             std::cout << duration << "\n" << std::flush;
 
-            usleep(static_cast<int>(duration*frequency));
+            usleep(static_cast<int>(duration));
+
+            return(duration);
 
 
         }
     }
 
-    void runfromfile(float frequency) {
+    float runfromfile(float frequency) {
         
         if (regular == 0) {
 
@@ -101,6 +112,8 @@ public:
 
             usleep(duration);
 
+            return duration;
+
         } else {
 
             float duration = (instructions * cpi)/frequency;
@@ -108,6 +121,8 @@ public:
             std::cout << "Irregular task " << id << ": " << duration << "\n";
         
             usleep(duration);
+
+            return duration;
 
         }
     }

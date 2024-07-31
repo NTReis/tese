@@ -142,7 +142,6 @@ void loadworkersFile(const std::string& pathWorkerFile) {
         float frequency=0;
         while (file >> id >> type >> frequency) {
 
-                //std::lock_guard<std::mutex> lock(consList);
                 consumerlist.push_back(Consumer(id, static_cast<ConsumerType>(type), frequency));
                 consCount++;
             
@@ -224,6 +223,11 @@ void scheduler(){
 }
 
 void consumer (int id){
+
+    if (id < 0 || id >= consumerlist.size()) {
+    std::cerr << "Error: Invalid consumer id " << id << std::endl;
+    return;
+    }
 
     Consumer& cons = consumerlist[id];
 
@@ -312,7 +316,11 @@ void consumer (int id){
                 delete taskPtr;
                 taskPtr = nullptr;
 
-            }   
+            } else 
+                {
+                    std::cerr << "Error: Null task pointer for consumer " << id << std::endl;
+                    continue;
+                } 
                         
             std::lock_guard<std::mutex> guard(mtx);
             if (cons.wrkld > 0) {

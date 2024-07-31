@@ -23,7 +23,7 @@ class Consumer {
 private:
     //rigtorp::SPSCQueue<Task*> taskBufferConsumer{128};
 
-    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128};
+    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128}; //estava 128
 
     std::vector<Task*> taskBufferConsumerCopy;
 
@@ -61,11 +61,11 @@ public:
         return value;
     }
 
-
-    ConsumerType type;
     int id;
+    ConsumerType type;
+    
     double frequency;
-    int wrkld;
+    int wrkld = 0; //MUDANÇA
 
     ConsumerType getType() const {
         return type;
@@ -120,7 +120,7 @@ public:
 
 
 
-    Consumer(int id, ConsumerType type, double frequency) 
+    Consumer(int id, ConsumerType type, float frequency) 
         : id(id), type(type), frequency(frequency), taskBufferConsumer(128) {} 
 
 

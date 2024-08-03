@@ -1,4 +1,10 @@
-// g++ LockFree.cpp -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0
+// g++ -g LockFree.cpp -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0 -DD_LOL
+
+//testar com isto 
+
+// g++ -g LockFree.cpp -O2 -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0 -DD_LOL
+// g++ -g LockFree.cpp -O3 -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0 -DD_LOL
+
 
 #include <iostream>
 #include <queue>
@@ -12,33 +18,41 @@
 #include <fstream>
 #include "Task.h"
 #include "Consumer.h"
-#include "Scheduler.h"
+//#include "Scheduler.h"
+#include "SchedulerWS.h"
 #include <boost/lockfree/spsc_queue.hpp>
 #include <chrono>
+#include <memory>
 
-
+boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
 
 std::mutex idMutex; // Mutex to protect the increment operation for globalTaskId
 std::mutex printMutex; // Mutex to protect the print operation
-boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
+std::mutex mtx; // Mutex to protect the consumer workload
+std::mutex mtx2; 
+std::mutex consList; // Mutex to protect the consumer list
 std::vector<Consumer> consumerlist;
 std::vector<std::string> log_precursor;
-//std::condition_variable cv;
-//std::condition_variable producer_cv;  // new condition variable for the scheduler
+std::condition_variable producer_cv;  // new condition variable for the scheduler
 std::atomic<bool> producersFinished=false;
 std::atomic<bool> schedulersFinished=false;
-std::atomic<bool> schedulersEnded=false;
 std::atomic<bool> useProducer=false;
-int globalTaskId = 0;  // Global variable to store the task ID
 std::atomic<int> taskCount=0;
 std::atomic<int> consCount=0;
-Scheduler test;
+std::atomic<int> activeProducers(0);
+int globalTaskId = 0;  // Global variable to store the task ID
 int log_counter = 0;
+Scheduler test;
+
 
 
 void savetaskFile(int elem) {
     std::ofstream file("tasks.txt");
-    if (file.is_open()) {
+    if (!file.is_open()) {
+        std::cerr << "Failed to open tasks.txt" << std::endl;
+        return;
+    }
+
     for (int id = 0; id < elem; ++id) {
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -52,7 +66,6 @@ void savetaskFile(int elem) {
             std::normal_distribution<float> distribution(0.51, 0.5);
             cpi = std::abs(distribution(gen));
             instructions = 200;
-            
         } else {
             std::normal_distribution<float> distribution(0.51, 0.5);
             float random_value = std::abs(distribution(gen));
@@ -60,12 +73,7 @@ void savetaskFile(int elem) {
             instructions = random_value * 200;
         }
 
-        Task task(id, static_cast<TaskType>(type), instructions, cpi);
-        int typeStr = task.getType();
-        file << id << ' ' << typeStr << ' ' << task.getInstructions() << task.getCPI() <<'\n';
-    }
-    } else {
-        std::cerr << "Error: Could not open tasks.txt\n";
+        file << "Task " << id << ": Type=" << type << ", Instructions=" << instructions << ", CPI=" << cpi << std::endl;
     }
     file.close();
 }
@@ -130,12 +138,15 @@ void saveworkersFile(int consumers, int cpu) {
 void loadworkersFile(const std::string& pathWorkerFile) {
     std::ifstream file(pathWorkerFile);
     if (file.is_open()) {
-        int id;
-        int type; // Change the type to an integer.
-        float frequency;
+        int id=0;
+        int type=0; // Change the type to an integer.
+        float frequency=0;
         while (file >> id >> type >> frequency) {
-            consumerlist.push_back(Consumer(id, static_cast<ConsumerType>(type), frequency));
-            consCount++;
+
+                consumerlist.push_back(Consumer(id, static_cast<ConsumerType>(type), frequency));
+                consCount++;
+            
+
             //std::cout << "Consumer " << consCount << " loaded\n";
         }
     } else {
@@ -149,7 +160,6 @@ void producer(int id, int elem) {
     for (int i = 0; i < elem; ++i) {
         
         int taskId = globalTaskId++;  // Get the current ID and increment it
-        for (int id = 0; id < elem; ++id) {
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> distr(0, 1);
@@ -172,32 +182,53 @@ void producer(int id, int elem) {
 
         TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
      
-
         taskBuffer.push(new Task(id, taskType, instructions, cpi));
         taskCount++;
             
+
+        printMutex.lock();
         std::cout << "Producer " << id << ": Task " << taskId << std::endl;
-                
+        printMutex.unlock();
+        
+                        
     }
+
+    activeProducers--;
+    if (activeProducers == 0) {
+        producer_cv.notify_one(); 
     }
+    
 
 }
 
 void scheduler(){
 
-    int chunkSize = 1;
+    int chunksize = 10;
 
-    test.startScheduling(taskCount, chunkSize, consumerlist, taskBuffer);
+    if (useProducer) {
 
-    test.setSchedulersFinished(true);
+    std::unique_lock<std::mutex> lk(mtx2);
+    producer_cv.wait(lk, []{ return activeProducers == 0; }); 
+    
+        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+
+        test.setSchedulersFinished(true);
+        
+    } else if (!useProducer) {
+        
+        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+
+        test.setSchedulersFinished(true);
+    }
 
 }
 
 void consumer (int id){
 
-
-    //std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Sleep to prevent race conditions
-    
+    if (id < 0 || id >= consumerlist.size()) {
+    std::cerr << "Error: Invalid consumer id " << id << std::endl;
+    return;
+    }
 
     Consumer& cons = consumerlist[id];
 
@@ -211,6 +242,7 @@ void consumer (int id){
     while(!test.schedulerFinished() || !cons.isTaskBufferEmpty()) {
 
         if (!cons.isTaskBufferEmpty()){
+        
 
             Task* taskPtr = cons.popTask();
                 
@@ -234,11 +266,10 @@ void consumer (int id){
 
             if (taskPtr != nullptr){
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::this_thread::sleep_for(std::chrono::milliseconds(500)); 
 
                 if (useProducer) {
                     float duration = taskPtr->run(clk_frq);
-
                     
                     //ver o tempo desde que começou a consumir
                     auto now = std::chrono::high_resolution_clock::now();
@@ -256,9 +287,7 @@ void consumer (int id){
                     ++log_counter;
 
                     
-                    #endif
-
-                    
+                    #endif 
                    
                 } else {
                     float duration = taskPtr->runfromfile(clk_frq);
@@ -283,19 +312,28 @@ void consumer (int id){
                     #endif
 
                 }  
+
+                delete taskPtr;
+                taskPtr = nullptr;
+
+            } else 
+                {
+                    std::cerr << "Error: Null task pointer for consumer " << id << std::endl;
+                    continue;
+                } 
+                        
+            std::lock_guard<std::mutex> guard(mtx);
+            //mtx.lock();
+            if (cons.wrkld > 0) {
+                --cons.wrkld;
             }
-                
-            delete taskPtr;
-            
-            --cons.wrkld;
 
-
-            if (cons.wrkld < flag) {
-                cons.setNeedMoreTasks(true);
+            if (cons.wrkld < flag && cons.wrkld > 0) {
+               cons.setNeedMoreTasks(true);
             }
+            //mtx.unlock();
 
-
-        }         
+        }        
      
         
     } 
@@ -306,7 +344,7 @@ void consumer (int id){
 
     if (log_file.is_open()){
 
-        for(int l; l<= log_counter; l++){
+        for(int l; l < log_precursor.size(); l++){
             log_file << log_precursor[l];
         }
 
@@ -317,7 +355,6 @@ void consumer (int id){
     #endif
 
 }
-
 
 void usage() {
     std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -f path_worker_file path_tasks_file | -cc num_consumers num_cpu path_tasks_file | -cp num_elems path_worker_file num_producers]\n";
@@ -505,6 +542,7 @@ int main(int argc, char* argv[]) {
         std::string pathWorkerFile = argv[3];
         int producers = std::stoi(argv[4]);
         useProducer=true;
+        activeProducers = producers;
 
         loadworkersFile(pathWorkerFile);
 
@@ -515,7 +553,6 @@ int main(int argc, char* argv[]) {
         log_precursor.push_back( " -------------------------------------------------------------------------\n");   
         
         #endif
-
         int consumers = consCount;
 
         int consumer_workload = (elem / consumers); 
@@ -543,7 +580,7 @@ int main(int argc, char* argv[]) {
         }
 
         std::thread schedulerThread(scheduler);
-            
+
 
         for (int i = 0; i < consumers; ++i) {
             consumerThreads[i] = std::thread(consumer, i);

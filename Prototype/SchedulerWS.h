@@ -24,8 +24,6 @@ std::mutex mtx; // Mutex to protect the print operation
 bool isTaskBufferEmpty(boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer) {
     return taskBuffer.empty();
 
-
-
 }
 
 public:
@@ -43,7 +41,9 @@ void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*
     cons.copyTasks();
     cons.wrkld += chunkSize;
 
-    mtx.lock();
+    //mtx.lock();
+    std::lock_guard<std::mutex> guard(mtx);
+
     if (chunkSize > 0){
         std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << std::endl;
     }
@@ -59,17 +59,14 @@ void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*
           // taskBuffer is empty, break the loop
         }
     }
-    mtx.unlock();   
+    //mtx.unlock();   
 
 }
 
 void redistributeTasks(std::vector<Consumer>& consumerList) {
-
-
     Consumer* maxTaskConsumer = nullptr;
     Consumer* needyConsumer = nullptr;
     int maxTasks = 0;
-  
 
     for (Consumer& cons : consumerList) {
         if (cons.getNeedMoreTasks()) {
@@ -86,9 +83,9 @@ void redistributeTasks(std::vector<Consumer>& consumerList) {
     int tasksToSteal = maxTasks / 2; //rouba metade das tasks
 
 
+    std::lock_guard<std::mutex> guard(mtx);
 
-
-    mtx.lock();
+    //mtx.lock();
     std::cout << "STEALING: Consumer " << needyConsumer->getId() << " stealing " << tasksToSteal << " tasks from Consumer " << maxTaskConsumer->getId() << std::endl;
 
     if (needyConsumer && maxTaskConsumer && maxTaskConsumer != needyConsumer) {
@@ -105,7 +102,7 @@ void redistributeTasks(std::vector<Consumer>& consumerList) {
     needyConsumer->wrkld += tasksToSteal;
     maxTaskConsumer->wrkld -= tasksToSteal;
 
-    mtx.unlock();
+    //mtx.unlock();
 }
 
 void startScheduling(int totalTasks, std::vector<Consumer>& consumerList, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
@@ -123,7 +120,6 @@ void startScheduling(int totalTasks, std::vector<Consumer>& consumerList, boost:
             distributeTasks(cons, chunkSize, taskBuffer);
             totalTasks -= chunkSize;
 
-            //std::cout << totalTasks;
         } else {
             int restante = chunkSize+resto;
             distributeTasks(cons, restante, taskBuffer);
@@ -134,7 +130,7 @@ void startScheduling(int totalTasks, std::vector<Consumer>& consumerList, boost:
 // Work-stealing phase
     bool allConsumersFinished = false;
     while (!allConsumersFinished) {
-        allConsumersFinished = true;
+        allConsumersFinished = true;        
 
         for (int i = 0; i < totalConsumers; ++i) {
             Consumer& cons = consumerList[i];
@@ -150,23 +146,31 @@ void startScheduling(int totalTasks, std::vector<Consumer>& consumerList, boost:
                 allConsumersFinished = false;
             }
         }
+        
+        if (allConsumersFinished) {
+            std::cout << "All consumers have finished their tasks. No stealing required." << std::endl;
+            break;
+        }
     }
 }
 
 
 void setSchedulersFinished(bool value){
-    mtx.lock();
+    std::lock_guard<std::mutex> guard(mtx);
+
+    //mtx.lock();
     schedulers_finished = value;
-    mtx.unlock();
+    //mtx.unlock();
 }
 
 bool schedulerFinished(){
+    std::lock_guard<std::mutex> guard(mtx);
 
-    mtx.lock();
+    //mtx.lock();
 
     bool value = schedulers_finished;
 
-    mtx.unlock();
+    //mtx.unlock();
 
     return value;
 

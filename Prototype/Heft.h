@@ -53,11 +53,12 @@ Scheduler(){
 
 
 void initializeData(int taskCount, std::vector<Consumer>& consumerList, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-    std::cout << "Initializing data..." << std::endl;
-    int consumerCount = consumerList.size();
+    std::cout << "Initializing data...\n" << std::endl;
+    //int consumerCount = consumerList.size();
+    communication_cost_dag.clear();
 
     for (int i = 0; i < taskCount; i++) {
-        std::vector<int> v(consumerCount);
+        std::vector<int> v(taskCount);
         communication_cost_dag.push_back(v);
         
         for (int j = 0; j < taskCount; j++) {
@@ -70,7 +71,7 @@ void initializeData(int taskCount, std::vector<Consumer>& consumerList, boost::l
 
                 //std::cout << "Task " << i << " to Task " << j << " has communication cost " << communication_cost_dag[i][j] << std::endl;
                 
-                // Add the task to the parents vector if the communication cost is greater than zero
+                //Add the task to the parents vector if the communication cost is greater than zero
                 if (communication_cost_dag[i][j] > 0) {
                     taskPtr->parents.push_back(i);
                 }
@@ -129,59 +130,59 @@ float getComputationCost(int taskID, int consumerID) {
     return computationCosts[taskID][consumerID];
 }
 
-// float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-//     float max_rank = 0;
-//     int comp_avg = 0;  // Ensure proper initialization
+float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+    float max_rank = 0;
+    int comp_avg = 0;  
 
-//     std::cout << "Calculating rank for node " << node << std::endl;
+    std::cout << "Calculating rank for node " << node << std::endl;
 
-//     // Recursive calculation for all successor tasks
-//     for (int i = 0; i < taskCount; i++) {
-//         if (communication_cost_dag[node][i] > 0) {
-//             std::cout << "Node " << node << " has edge to Node " << i << std::endl;
+    // Recursive calculation for all successor tasks
+    for (int i = 0; i < taskCount; i++) {
+        if (i != node && communication_cost_dag[node][i] > 0) {
+            std::cout << "Node " << node << " has edge to Node " << i << std::endl;
 
-//             float succ_rank = rankCalculate(i, taskCount, taskBuffer); // Recursive call
-//             max_rank = std::max(max_rank, succ_rank + communication_cost_dag[node][i]);
-//         }
-//     }
+            float succ_rank = rankCalculate(i, taskCount, taskBuffer); // Recursive call
+            max_rank = std::max(max_rank, succ_rank + communication_cost_dag[node][i]);
+        }
+    }
 
-//     {
-//         std::lock_guard<std::mutex> guard(mtx);
-//         Task* taskPtr = nullptr;  // Initialize to nullptr
+    {
+        std::lock_guard<std::mutex> guard(mtx);
+        Task* taskPtr = nullptr;  // Initialize to nullptr
 
-//         // Pop a task from the buffer
-//         if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
-//             comp_avg = taskPtr->computation_avg; // Access computation average
+        // Pop a task from the buffer
+        if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
+            comp_avg = taskPtr->computation_avg; // Access computation average
 
-//             // Set rank and push the task back to the buffer
-//             taskPtr->rank = max_rank + comp_avg;
+            // Set rank and push the task back to the buffer
+            taskPtr->rank = max_rank + comp_avg;
 
-//             std::cout << "Task " << taskPtr->getId() << " has rank " << taskPtr->getRank() << std::endl;
-//             std::cout << "DEBUG" << std::endl;
+            std::cout << "Task " << taskPtr->getId() << " has rank " << taskPtr->getRank() << std::endl;
+            std::cout << "DEBUG" << std::endl;
 
-//             taskBuffer.push(taskPtr);
-//         } else {
-//             // Handle the case where no task is available or taskPtr is nullptr
-//             std::cerr << "Error: Failed to pop task from buffer or taskPtr is nullptr." << std::endl;
-//         }
-//     }
+            taskBuffer.push(taskPtr);
+        } else {
+            // Handle the case where no task is available or taskPtr is nullptr
+            std::cerr << "Error: Failed to pop task from buffer or taskPtr is nullptr." << std::endl;
+        }
+    }
 
-//     return max_rank + comp_avg;
-// }
-
-float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer){
-    
-    float rank = node;
-
-    
-    //std::cout << "Task " << node << " has rank " << rank << std::endl;
-    
-    return rank;
+    return max_rank + comp_avg;
 }
+
+// float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer){
+    
+//     float rank = node;
+
+    
+//     //std::cout << "Task " << node << " has rank " << rank << std::endl;
+    
+//     return rank;
+// }
 
 void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
     // This vector holds pairs of task IDs and their ranks
-    std::vector<std::pair<int, float>> taskRanks;
+    //std::vector<std::pair<int, float>> taskRanks;
 
     int minrank = 0;
     
@@ -190,7 +191,7 @@ void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixe
         Task* taskPtr = nullptr;  // Initialize to nullptr
         
         
-            std::lock_guard<std::mutex> guard(mtx); // Lock for thread safety
+            std::lock_guard<std::mutex> guard(mtx); 
             
             if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
                 // Calculate rank for the task
@@ -211,21 +212,22 @@ void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixe
         
     }
 
+    std::cout << taskBufferCopy.size() << " task ranks collected." << std::endl;
+
     for (int i = 0; i < taskCount; ++i) {
         Task* taskPtr = taskBufferCopy.front();
         taskBufferCopy.pop_front();
         updatedTaskBuffer.push(taskPtr);
     }
 
-    std::cout << taskRanks.size() << " task ranks collected." << std::endl;
-
-    // Sort based on rank in descending order
-    std::sort(taskRanks.begin(), taskRanks.end(), [](const auto& a, const auto& b) {
-        return a.second > b.second;
-    });
-
-
     
+
+    // // Sort based on rank in descending order
+    // std::sort(taskRanks.begin(), taskRanks.end(), [](const auto& a, const auto& b) {
+    //     return a.second > b.second;
+    // });
+
+
 }
 
 
@@ -238,7 +240,7 @@ void distributeTasks(std::vector<Consumer>& consumerList, int chunkSize, boost::
 
         if (!popped) {
             // Buffer is empty; exit the loop
-            std::cout << "No more tasks in buffer. Exiting distribution loop." << std::endl;
+            std::cout << "\nNo more tasks in buffer. Exiting distribution loop.\n" << std::endl;
             break;
         }
 
@@ -345,7 +347,7 @@ void startScheduling(int taskCount, std::vector<Consumer>& consumerList, boost::
         Consumer& cons = consumerList[i];
         setComputationCost(cons, taskCount, taskBuffer, totalConsumers);
     }
-    std::cout << "Setting computation costs..." << std::endl;
+    std::cout << "\nSetting computation costs...\n" << std::endl;
 
     initializeData(taskCount, consumerList, taskBuffer);
 
@@ -353,7 +355,7 @@ void startScheduling(int taskCount, std::vector<Consumer>& consumerList, boost::
 
     
     sortRank(taskCount, taskBuffer);
-    std::cout << "Sorting ranks..." << std::endl;
+    std::cout << "Sorting ranks...\n" << std::endl;
 
   
     distributeTasks(consumerList, taskCount, updatedTaskBuffer);

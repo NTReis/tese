@@ -42,15 +42,53 @@ std:: vector<int> parents; // indexes of all the parents of a particular node
 
 std::vector<std::vector<int>> communication_cost_dag; //tasks and their communication costs between each other
 
+#include <vector>
+#include <iostream>
+
+
+std::vector<std::vector<int>> communication_cost_dag_test = {
+    {0, 10, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 0, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 61, 0, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 0, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 81, 0},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 19},
+        {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+};
+
+
 std::vector<std::vector<float>> computationCosts; //tasks and their computation costs on each processor
 
 std::vector<std::pair<int, float>> taskRanks; //tasks and their ranks
 
+//std::vector<std::pair<int, bool>> visited; //tasks and their visited status
 
 
 Scheduler(){
     }
 
+
+float setCommunicationCost(int taskI, int taskJ) {
+    // Random number generator
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dist(0, 1);
+
+    return dist(gen);
+}
 
 void initializeData(int taskCount, std::vector<Consumer>& consumerList, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
     std::cout << "Initializing data...\n" << std::endl;
@@ -67,16 +105,14 @@ void initializeData(int taskCount, std::vector<Consumer>& consumerList, boost::l
             // Pop a task from the buffer
             if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
                 int temp = taskPtr->getTemp();
-                communication_cost_dag[i][j] = temp;
+                communication_cost_dag[i][j] = setCommunicationCost(i, j)*temp;
 
                 //std::cout << "Task " << i << " to Task " << j << " has communication cost " << communication_cost_dag[i][j] << std::endl;
                 
-                //Add the task to the parents vector if the communication cost is greater than zero
+                //NAO CHEGO A UTILIZAR OCMO NOVO METODO Add the task to the parents vector if the communication cost is greater than zero
                 if (communication_cost_dag[i][j] > 0) {
                     taskPtr->parents.push_back(i);
                 }
-
-                
                 //std::cout << "Task " << i << " has " << taskPtr->parents.size() << " parents." << std::endl;
 
                 
@@ -90,8 +126,6 @@ void initializeData(int taskCount, std::vector<Consumer>& consumerList, boost::l
 }
 
 void setComputationCost(Consumer& cons, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer, int consumerCount) {
-
-
 
     computationCosts.resize(taskCount, std::vector<float>(consumerCount, 0.0f));
     
@@ -130,59 +164,120 @@ float getComputationCost(int taskID, int consumerID) {
     return computationCosts[taskID][consumerID];
 }
 
-float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-    float max_rank = 0;
-    int comp_avg = 0;  
 
-    std::cout << "Calculating rank for node " << node << std::endl;
+//experiemtnar usar o algoritmo de khan para calcular os ranks
 
-    // Recursive calculation for all successor tasks
-    for (int i = 0; i < taskCount; i++) {
-        if (i != node && communication_cost_dag[node][i] > 0) {
-            std::cout << "Node " << node << " has edge to Node " << i << std::endl;
+std::vector<float> rankCalculate(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+    std::vector<float> ranks(taskCount, 0.0f);
+    std::vector<int> inDegree(taskCount, 0);
+    std::vector<std::vector<int>> successors(taskCount);
 
-            float succ_rank = rankCalculate(i, taskCount, taskBuffer); // Recursive call
-            max_rank = std::max(max_rank, succ_rank + communication_cost_dag[node][i]);
+    
+    // std::cout << "communication_cost_dag matrix:" << std::endl;
+    // for (int i = 0; i < taskCount; ++i) {
+    //     for (int j = 0; j < taskCount; ++j) {
+    //         std::cout << communication_cost_dag_test[i][j] << " ";
+    //     }c
+    //     std::cout << std::endl;
+    // }
+
+    // Calculate in-degrees and successors
+    for (int i = 0; i < taskCount; ++i) {
+        for (int j = 0; j < taskCount; ++j) {
+            if (communication_cost_dag_test[i][j] > 0) {
+                successors[i].push_back(j);
+                ++inDegree[j];
+                //std::cout << "Task " << i << " in-degree " << inDegree[j] << std::endl;
+            }
         }
     }
 
-    {
-        std::lock_guard<std::mutex> guard(mtx);
-        Task* taskPtr = nullptr;  // Initialize to nullptr
+    //para funcionar tem que haver pelo menos uma task com o in-degree a 0 por isso 
+    
+    
+    std::queue<int> zeroInDegreeQueue;
 
-        // Pop a task from the buffer
-        if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
-            comp_avg = taskPtr->computation_avg; // Access computation average
-
-            // Set rank and push the task back to the buffer
-            taskPtr->rank = max_rank + comp_avg;
-
-            std::cout << "Task " << taskPtr->getId() << " has rank " << taskPtr->getRank() << std::endl;
-            std::cout << "DEBUG" << std::endl;
-
-            taskBuffer.push(taskPtr);
-        } else {
-            // Handle the case where no task is available or taskPtr is nullptr
-            std::cerr << "Error: Failed to pop task from buffer or taskPtr is nullptr." << std::endl;
-        }
+    for (int i = 0; i < taskCount; ++i) {
+        if (inDegree[i] == 0) {
+            zeroInDegreeQueue.push(i);
+            //std::cout << "Task " << i << " has in-degree 0." << std::endl;
+         }//  else
+        // { std::cout << "Task " << i << " has in-degree " << inDegree[i] << std::endl;}
+        
     }
 
-    return max_rank + comp_avg;
+    
+   //std::lock_guard<std::mutex> guard(mtx);
+    while (!zeroInDegreeQueue.empty()) {
+
+        int taskID = zeroInDegreeQueue.front();
+        
+        zeroInDegreeQueue.pop();
+
+        //std::cout << zeroInDegreeQueue.size() << "SIZe" << std::endl;
+
+
+        float max_rank = 0;
+        int comp_avg = 0;
+
+        // Calculate rank for the current node
+        for (int succ : successors[taskID]) {
+            max_rank = std::max(max_rank, ranks[succ] + communication_cost_dag_test[taskID][succ]);
+
+            //std::cout << "Task " << taskID << " has edge to Task " << succ << std::endl;
+        }
+
+         
+        //for (int j = 0; j < taskCount; j++){
+            
+            std::lock_guard<std::mutex> guard(mtx);
+            Task* taskPtr = nullptr;
+
+            
+
+            
+            if (taskBuffer.pop(taskPtr)) {
+
+                    if (taskPtr != nullptr && taskPtr->id == taskID) {
+                        comp_avg = taskPtr->computation_avg;
+
+                        //std::cout << "Task " << taskID << " has computation average " << comp_avg << std::endl;
+                        
+                        taskPtr->rank = max_rank + comp_avg;
+                        ranks[taskID] = taskPtr->rank;
+
+                        //std::cout << "!!!!!!!!!!Task " << taskID << " has rank " << taskPtr->rank << std::endl;
+                    }
+
+                
+                    taskBuffer.push(taskPtr);
+
+                    
+            } else {
+                    std::cerr << "Error: Failed to pop task from buffer or taskPtr is nullptr." << std::endl;
+                    break;
+                }
+
+            
+        
+        //}
+
+        // Aqui temos que retirar indregrees de todos os sucessores e os que tiverem in-degree 0 tem que ser adicionados à queue 
+        for (int succ : successors[taskID]) {
+            if (--inDegree[succ] == 0) {
+                zeroInDegreeQueue.push(succ);
+            }
+        }
+    }
+    
+
+    return ranks;
 }
 
-// float rankCalculate(int node, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer){
-    
-//     float rank = node;
-
-    
-//     //std::cout << "Task " << node << " has rank " << rank << std::endl;
-    
-//     return rank;
-// }
 
 void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-    // This vector holds pairs of task IDs and their ranks
-    //std::vector<std::pair<int, float>> taskRanks;
+    
+    std::vector rankings = rankCalculate(taskCount, taskBuffer);
 
     int minrank = 0;
     
@@ -195,14 +290,13 @@ void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixe
             
             if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
                 // Calculate rank for the task
-                float rank = rankCalculate(taskPtr->id, taskCount, taskBuffer);
+                
+                float rank = taskPtr->rank;
 
-                if (rank < minrank){
-                    minrank = rank;
-                    taskBufferCopy.push_back(taskPtr);
-                } else {
-                    taskBufferCopy.push_front(taskPtr);
-                }   
+                //std::cout << "Task " << taskPtr->id << " has a rank of " << taskPtr->rank << std::endl;
+
+                taskBufferCopy.push_back(taskPtr);
+  
 
                 taskBuffer.push(taskPtr);
 
@@ -212,7 +306,16 @@ void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixe
         
     }
 
-    std::cout << taskBufferCopy.size() << " task ranks collected." << std::endl;
+    
+    std::sort(taskBufferCopy.begin(), taskBufferCopy.end(), [](Task* a, Task* b) {
+        return a->rank < b->rank;
+    });
+
+
+    // for (int i = 0; i < 20 ; i++){
+    //     std::cout << "!!!!!!!!!Task " << taskBufferCopy[i]->id << " has rank " << taskBufferCopy[i]->rank << std::endl;
+    // }
+
 
     for (int i = 0; i < taskCount; ++i) {
         Task* taskPtr = taskBufferCopy.front();
@@ -220,12 +323,6 @@ void sortRank(int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixe
         updatedTaskBuffer.push(taskPtr);
     }
 
-    
-
-    // // Sort based on rank in descending order
-    // std::sort(taskRanks.begin(), taskRanks.end(), [](const auto& a, const auto& b) {
-    //     return a.second > b.second;
-    // });
 
 
 }
@@ -261,7 +358,7 @@ void distributeTasks(std::vector<Consumer>& consumerList, int chunkSize, boost::
         // Evaluate each consumer to find the best one
         for (Consumer& cons : consumerList) {
             if (!cons.getNeedMoreTasks()) {
-                float est = cons.getWrkld()*3000; // Tempo estimado que falta para terminar o trabalho
+                float est = cons.getWrkld()*3000; // Tempo estimado que falta para terminar o trabalho ()
                 float eft = est + getComputationCost(taskPtr->getId(), cons.getId());
 
                 if (eft < minEFT) {
@@ -379,6 +476,59 @@ bool schedulerFinished(){
     return value;
 
 }
+
+// float rankCalculate(int nodeID, int taskCount, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+    
+//     if (visited[nodeID].second) {
+//         std::cerr << "Cycle detected at node " << nodeID << ". Breaking recursion." << std::endl;
+//         return 0;  // You can return a default value or handle it differently
+//     }
+
+
+//     visited[nodeID].second = true;
+    
+    
+//     float max_rank = 0;
+//     int comp_avg = 0;  
+
+//     std::cout << "Calculating rank for node " << nodeID << std::endl;
+
+//     //Recursive
+//     for (int i = 0; i < taskCount; i++) {
+//         if (i != nodeID && communication_cost_dag[nodeID][i] > 0) {
+//             std::cout << "Node " << nodeID << " has edge to Node " << i << std::endl;
+
+//             float succ_rank = rankCalculate(i, taskCount, taskBuffer); // Recursive call
+//             max_rank = std::max(max_rank, succ_rank + communication_cost_dag[nodeID][i]);
+//         }
+//     }
+
+//     {
+//         std::lock_guard<std::mutex> guard(mtx);
+//         Task* taskPtr = nullptr;  // Initialize to nullptr
+
+//        
+//         if (taskBuffer.pop(taskPtr) && taskPtr != nullptr) {
+//             comp_avg = taskPtr->computation_avg; // Access computation average
+
+//             
+//             taskPtr->rank = max_rank + comp_avg;
+
+//             std::cout << "Task " << taskPtr->getId() << " has rank " << taskPtr->getRank() << std::endl;
+//             std::cout << "DEBUG" << std::endl;
+
+//             taskBuffer.push(taskPtr);
+//         } else {
+//             
+//             std::cerr << "Error: Failed to pop task from buffer or taskPtr is nullptr." << std::endl;
+//         }
+//     }
+
+//     visited[nodeID].second = false;
+
+//     return max_rank + comp_avg;
+// }
+
 
 };
 

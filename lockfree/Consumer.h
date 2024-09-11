@@ -23,15 +23,13 @@ class Consumer {
 private:
     //rigtorp::SPSCQueue<Task*> taskBufferConsumer{128};
 
-    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128}; //estava 128
+    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128}; 
 
     std::vector<Task*> taskBufferConsumerCopy;
 
     bool need_more_tasks = false;
     
     std::mutex mtx;
-
-
 
 public:
 
@@ -49,18 +47,22 @@ public:
     }
  
     void setNeedMoreTasks(bool value) {
+        
         mtx.lock();
+
         need_more_tasks = value;
         mtx.unlock();
     }
 
     bool getNeedMoreTasks() {
+        
         mtx.lock();
         bool value = need_more_tasks;
         mtx.unlock();
         return value;
     }
 
+    
     int id;
     ConsumerType type;
     
@@ -81,6 +83,10 @@ public:
 
     int getWrkld() const {
         return wrkld;
+    }
+
+    int getTaskCount() const {
+    return taskBufferConsumerCopy.size();
     }
 
 
@@ -117,8 +123,6 @@ public:
     }
 
     //não dá para aceder ao indice do taskBufferConsumer então criei uma cópia e copio tudo de uma vez
-
-
 
     Consumer(int id, ConsumerType type, float frequency) 
         : id(id), type(type), frequency(frequency), taskBufferConsumer(128) {} 

@@ -48,7 +48,7 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
     for (j = 0; flag; ++j) {
         Task* taskPtr;
         if (taskBuffer.pop(taskPtr)) {
-            float aux = taskPtr->getTemp();
+            float aux = taskPtr->getPred();
             float new_tempo = tempo + (aux / cons.getFreq());
             if (new_tempo <= controlPred) {
                 tempo = new_tempo;
@@ -56,7 +56,7 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
             } else {
                 taskBuffer.push(taskPtr);  // Put the task back
                 flag = false; // Exceeds controlPred, break the loop
-                //j--; 
+                j--; 
                   
             }
         } else {
@@ -101,7 +101,7 @@ float distributeFirstTask(Consumer& cons, int chunkSize, boost::lockfree::queue<
         Task* taskPtr;
         if (taskBuffer.pop(taskPtr)) {
             cons.pushTask(taskPtr);
-            tempSum += taskPtr->getTemp();
+            tempSum += taskPtr->getPred();
 
                         
         } else {
@@ -124,37 +124,6 @@ float distributeFirstTask(Consumer& cons, int chunkSize, boost::lockfree::queue<
     return result;
 }
 
-void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-
-
-    bool flag = true;
-    
-    cons.copyTasks();
-    cons.wrkld += chunkSize;
-
-    mtx.lock();
-    if (chunkSize > 0){
-        std::cout << "\nScheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << "\n" << std::endl;
-    }
- 
-
-    for (int j = 0; j < chunkSize && flag; ++j) {
-        Task* taskPtr;
-        if (taskBuffer.pop(taskPtr)) {
-            cons.pushTask(taskPtr);
-                        
-        } else {
-            flag = false;
-          // taskBuffer is empty, break the loop
-        }
-    }
-    mtx.unlock();   
-    
-    
-    if (cons.getNeedMoreTasks()){
-        cons.setNeedMoreTasks(false);
-    }
-}
 
 void startScheduling(int totalTasks, int chunkSize, std::vector<Consumer>& consumerlist, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
     

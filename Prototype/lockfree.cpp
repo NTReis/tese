@@ -5,8 +5,14 @@
 // g++ -g LockFree.cpp -O2 -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0 -DD_LOL
 // g++ -g LockFree.cpp -O3 -o engine -lpthread -I/home/hondacivic/Boost/boost_1_82_0 -DD_LOL
 
+#include <cmath>
 
+#include <regex>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <string>
 #include <queue>
 #include <thread>
 #include <mutex>
@@ -19,10 +25,12 @@
 #include "Task.h"
 #include "Consumer.h"
 //#include "Scheduler.h"
-#include "SchedulerWS.h"
+#include "SchedulerPredict.h"
+//#include "SchedulerWS.h"
+//#include "Heft.h"
 #include <boost/lockfree/spsc_queue.hpp>
 #include <chrono>
-#include <memory>
+
 
 boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0);
 
@@ -201,27 +209,90 @@ void producer(int id, int elem) {
 
 }
 
+
+
+// void scheduler(){
+
+//     int chunksize = 10;
+
+//     if (useProducer) {
+
+//     std::unique_lock<std::mutex> lk(mtx2);
+//     producer_cv.wait(lk, []{ return activeProducers == 0; }); 
+    
+//         test.startScheduling(taskCount, consumerlist, taskBuffer);
+
+//         test.setSchedulersFinished(true);
+        
+//     } else if (!useProducer) {
+        
+//         test.startScheduling(taskCount, consumerlist, taskBuffer);
+
+//         test.setSchedulersFinished(true);
+//     }
+
+// }
+
+void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+    if (!todo) {
+            for (int j = 0; j < taskCount; ++j) {
+            Task* taskPtr;
+            if (taskBuffer.pop(taskPtr)) {
+
+                taskPtr->setError(taskPtr->getTemp());
+                taskBuffer.push(taskPtr);
+                
+
+
+            }               
+        }
+    }else {
+            for (int j = 0; j < taskCount; ++j) {
+                Task* taskPtr;
+                if (taskBuffer.pop(taskPtr)) {
+                    float center = taskPtr->getTemp();
+
+                    float range = center * (error / 100.0);
+                    float stddev = range / 3.0; // 99.7% of values fall within ±3 standard deviations
+
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::normal_distribution<float> distribution(center, range);
+
+                    float pred;
+            
+                    pred = std::abs(distribution(gen));
+                    taskPtr->setError(pred);    
+                    std::cout << "Task " << taskPtr->getId() << " error: " << pred << "| Real time:"<< taskPtr->getTemp() <<"\n";
+                    taskBuffer.push(taskPtr);  
+                }               
+        
+    }
+    }
+}
+
 void scheduler(){
 
-    int chunksize = 10;
+    int chunksize = 50;
 
     if (useProducer) {
 
     std::unique_lock<std::mutex> lk(mtx2);
     producer_cv.wait(lk, []{ return activeProducers == 0; }); 
     
-        test.startScheduling(taskCount, consumerlist, taskBuffer);
+        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
 
         test.setSchedulersFinished(true);
         
     } else if (!useProducer) {
         
-        test.startScheduling(taskCount, consumerlist, taskBuffer);
+        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
 
         test.setSchedulersFinished(true);
     }
 
 }
+
 
 void consumer (int id){
 
@@ -240,6 +311,9 @@ void consumer (int id){
     auto start = std::chrono::high_resolution_clock::now();
 
     while(!test.schedulerFinished() || !cons.isTaskBufferEmpty()) {
+        //cons.startConsuming();
+        
+        
 
         if (!cons.isTaskBufferEmpty()){
         
@@ -247,6 +321,8 @@ void consumer (int id){
             Task* taskPtr = cons.popTask();
                 
             std::lock_guard<std::mutex> lock(printMutex); 
+
+            
 
             #ifdef D_LOL
 
@@ -266,7 +342,7 @@ void consumer (int id){
 
             if (taskPtr != nullptr){
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(500)); 
+                //std::this_thread::sleep_for(std::chrono::milliseconds(25)); 
 
                 if (useProducer) {
                     float duration = taskPtr->run(clk_frq);
@@ -316,10 +392,13 @@ void consumer (int id){
                 delete taskPtr;
                 taskPtr = nullptr;
 
+                
+
             } else 
                 {
                     std::cerr << "Error: Null task pointer for consumer " << id << std::endl;
                     continue;
+                    
                 } 
                         
             std::lock_guard<std::mutex> guard(mtx);
@@ -333,7 +412,8 @@ void consumer (int id){
             }
             //mtx.unlock();
 
-        }        
+        }      
+        //cons.stopConsuming();  
      
         
     } 
@@ -357,7 +437,106 @@ void consumer (int id){
 }
 
 void usage() {
-    std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -f path_worker_file path_tasks_file | -cc num_consumers num_cpu path_tasks_file | -cp num_elems path_worker_file num_producers]\n";
+    std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -f path_worker_file path_tasks_file | -cc num_consumers num_cpu path_tasks_file | -cp num_elems path_worker_file num_producers | -pred path_worker_file path_tasks_file error% ]\n";
+}
+
+struct LogEntry {
+    int consumerId;
+    std::string consumerType;
+    int taskId;
+    std::string taskType;
+    float duration;
+    float elapsedTime;
+};
+
+std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
+
+
+    std::ifstream logFile(pathLogFile);
+    std::vector<LogEntry> logEntries;
+    std::string line;
+
+    if (logFile.is_open()) {
+        // Skip the header lines
+        std::getline(logFile, line);
+        std::getline(logFile, line);
+
+    std::regex logEntryPattern(R"(Consumer\s(\d)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\sseconds)");
+
+        while (std::getline(logFile, line)) {
+             std::smatch match;
+        if (std::regex_search(line, match, logEntryPattern)) {
+            LogEntry entry;
+            entry.consumerId = std::stoi(match[1].str());
+            entry.consumerType = match[2].str();
+            entry.taskId = std::stoi(match[3].str());
+            entry.taskType = match[4].str();
+            entry.duration = std::stof(match[5].str());
+            entry.elapsedTime = std::stof(match[6].str());
+
+            logEntries.push_back(entry);
+
+            // std::cout << "Parsed Log Entry: "
+            //       << "Consumer ID: " << entry.consumerId
+            //       << ", Consumer Type: " << entry.consumerType
+            //       << ", Task ID: " << entry.taskId
+            //       << ", Task Type: " << entry.taskType
+            //       << ", Duration: " << entry.duration
+            //       << ", Elapsed Time: " << entry.elapsedTime << " seconds" << std::endl;
+        }
+        }
+        logFile.close();
+
+        std::cout << "Total log entries read: " << logEntries.size() << std::endl;
+    }
+
+    return logEntries;
+}
+
+
+void execOverview(const std::vector<LogEntry>& logEntries, const std::string& pathLogFile) {
+    if (logEntries.empty()) {
+        std::cerr << "Log file is empty or could not be read." << std::endl;
+        return;
+    }
+
+    // Find the first consumer's elapsed time
+    int firstConsumerId = logEntries.front().consumerId;
+    float fstConsumerET = 0.0;
+    float lstConsumerET = 0.0;
+    int i;
+
+    for( i=0; i<logEntries.size(); i++){
+        if (firstConsumerId == logEntries[i].consumerId) {
+            fstConsumerET = logEntries[i].elapsedTime;
+        }
+        
+    }
+
+     for(int  j=0; j<logEntries.size(); j++){
+        if (firstConsumerId != logEntries[j].consumerId) {
+            lstConsumerET = logEntries[j].elapsedTime;
+        }
+        
+    }
+
+    
+
+    float difference = lstConsumerET - fstConsumerET;
+
+    int percentage = (std::abs(difference)*100)/lstConsumerET;
+
+    //std::cout << "First consumer Ellapsed Time: " << fstConsumerET << " s" << std::endl;
+    //std::cout << "Last consumer Ellapsed Time: " << lstConsumerET << " s" << std::endl;
+
+    // Append the result to the log file
+    std::ofstream logFile(pathLogFile, std::ios_base::app);
+    if (logFile.is_open()) {
+        logFile << "\n Difference between first and last consumer: " << std::abs(difference) << "s" << " (" << percentage << "%" << " of overall Texec)" << std::endl;
+        logFile.close();
+    } else {
+        std::cerr << "Unable to open log file for writing." << std::endl;
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -438,6 +617,10 @@ int main(int argc, char* argv[]) {
         }
 
         schedulerThread.join();
+
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
+        execOverview(logEntries, "log.csv");
        
 
     } else if (command == "-f" && argc == 4) {
@@ -448,6 +631,8 @@ int main(int argc, char* argv[]) {
 
         int elem = taskCount;
         int consumers = consCount;
+
+        simulateError(false ,1, taskBuffer);
 
 
         int consumer_workload = (elem / consumers); 
@@ -484,6 +669,68 @@ int main(int argc, char* argv[]) {
         }
 
         schedulerThread.join();
+
+
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
+        execOverview(logEntries, "log.csv");
+
+    } else if (command == "-pred" && argc == 5) {
+        std::string pathWorkerFile = argv[2];
+        std::string pathTaskFile = argv[3];
+        int error = std::stoi(argv[4]);
+
+        std::cout << "WARNING: When using -pred all the tasks will have a prediction error of " << error << "%.\n" << std::endl;
+
+        loadworkersFile(pathWorkerFile);
+        loadtaskFile(pathTaskFile);
+
+        int elem = taskCount;
+        int consumers = consCount;
+
+        simulateError(true, error, taskBuffer);
+
+
+        int consumer_workload = (elem / consumers); 
+
+        if (consumer_workload == 0) {
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            consumers = elem;
+        } 
+
+
+        std::thread consumerThreads[consumers];
+
+        std::thread schedulerThread(scheduler);
+
+        #ifdef D_LOL
+    
+        log_precursor.push_back("Consumer ID |  Consumer Type | Task ID |  Task Type  |   Duration  |  Ellapsed Time\n");
+        ++log_counter;
+        log_precursor.push_back( " -------------------------------------------------------------------------\n");   
+        
+        #endif
+            
+
+        for (int i = 0; i < consumers; ++i) {
+            consumerThreads[i] = std::thread(consumer, i);
+        }
+
+
+        producersFinished = true;
+        
+
+        for (int i = 0; i < consumers; i++) {
+            consumerThreads[i].join();
+        }
+
+        schedulerThread.join();
+
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
+        execOverview(logEntries, "log.csv");
+
+        
 
 
     } else if (command == "-cc" && argc == 5) {
@@ -536,6 +783,10 @@ int main(int argc, char* argv[]) {
         }
 
         schedulerThread.join();
+
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
+        execOverview(logEntries, "log.csv");
 
     } else if (command == "-cp" && argc == 5) {
         int elem = std::stoi(argv[2]);
@@ -599,6 +850,10 @@ int main(int argc, char* argv[]) {
         }
 
         schedulerThread.join();
+
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
+        execOverview(logEntries, "log.csv");
        
     } else if (command == "-help" && argc == 2) {
         usage();

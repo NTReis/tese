@@ -4,6 +4,7 @@
 #include <iostream>
 #include <random>
 #include <unistd.h>
+#include <mutex>
 
 enum TaskType {
     Regular,
@@ -16,6 +17,7 @@ public:
     int regular;
     float rank;
     int temp;
+    int simulated_error;
 
     float computation_avg=10;
 
@@ -24,6 +26,14 @@ public:
 
     float getTemp() const {
         return static_cast<float>(cpi * instructions);
+    }
+
+    float getPred() const {
+        return static_cast<float>(simulated_error);
+    }
+
+    void setError(float error) {
+        simulated_error = error;
     }
 
     
@@ -85,6 +95,7 @@ public:
             cpi = 1.0;
             float duration = (instructions * cpi)/frequency;
 
+            
             std::cout << "Regular task " << id << ": " << duration << "\n" << std::flush;
             
             usleep(duration);
@@ -121,9 +132,9 @@ public:
         if (regular == 0) {
 
             float duration = (instructions * cpi)/frequency;
-            
+      
             std::cout << "Regular task " << id << ": " << duration <<  "\n";
-
+        
             usleep(duration);
 
             return duration;
@@ -131,7 +142,7 @@ public:
         } else {
 
             float duration = (instructions * cpi)/frequency;
-
+            
             std::cout << "Irregular task " << id << ": " << duration << "\n";
         
             usleep(duration);
@@ -151,6 +162,7 @@ private:
         regular = distribution(gen);  // 0 corresponds to false, 1 corresponds to true
     }
 };
+
 
 
 #endif

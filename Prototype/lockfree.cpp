@@ -24,8 +24,8 @@
 #include <fstream>
 #include "Task.h"
 #include "Consumer.h"
-//#include "Scheduler.h"
-#include "SchedulerPredict.h"
+#include "Scheduler.h"
+//#include "SchedulerPredict.h"
 //#include "SchedulerWS.h"
 //#include "Heft.h"
 #include <boost/lockfree/spsc_queue.hpp>
@@ -36,13 +36,17 @@ boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0)
 
 std::mutex idMutex; // Mutex to protect the increment operation for globalTaskId
 std::mutex printMutex; // Mutex to protect the print operation
+std::mutex fileMutex; // Mutex to protect the file operation
+
 std::mutex mtx; // Mutex to protect the consumer workload
 std::mutex mtx2; 
 std::mutex consList; // Mutex to protect the consumer list
 std::vector<Consumer> consumerlist;
 std::vector<std::string> log_precursor;
 std::condition_variable producer_cv;  // new condition variable for the scheduler
+std::condition_variable tasksLoaded_cv;  // new condition variable for the scheduler
 std::atomic<bool> producersFinished=false;
+std::atomic<bool> tasksLoaded=false;
 std::atomic<bool> schedulersFinished=false;
 std::atomic<bool> useProducer=false;
 std::atomic<int> taskCount=0;
@@ -54,35 +58,17 @@ Scheduler test;
 
 
 
-void savetaskFile(int elem) {
-    std::ofstream file("tasks.txt");
+void savetaskFile(int id, TaskType type, float instructions, float cpi) {
+    //std::lock_guard<std::mutex> lock(fileMutex);
+
+    std::ofstream file("tasksProduced.txt", std::ios::app);
     if (!file.is_open()) {
         std::cerr << "Failed to open tasks.txt" << std::endl;
         return;
     }
 
-    for (int id = 0; id < elem; ++id) {
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distr(0, 1);
+    file << id << ' ' << static_cast<int>(type) << ' ' << instructions << ' ' << cpi << '\n';
 
-        int type = distr(gen);  // Randomly assign type as Regular (0) or Irregular (1)
-        float instructions = 0;
-        float cpi = 0;
-
-        if (type == Regular) {
-            std::normal_distribution<float> distribution(0.51, 0.5);
-            cpi = std::abs(distribution(gen));
-            instructions = 200;
-        } else {
-            std::normal_distribution<float> distribution(0.51, 0.5);
-            float random_value = std::abs(distribution(gen));
-            cpi = std::abs(distribution(gen));
-            instructions = random_value * 200;
-        }
-
-        file << "Task " << id << ": Type=" << type << ", Instructions=" << instructions << ", CPI=" << cpi << std::endl;
-    }
     file.close();
 }
 
@@ -161,13 +147,20 @@ void loadworkersFile(const std::string& pathWorkerFile) {
         std::cerr << "Error: Could not open workers.txt\n";
     }
     file.close();
+
+    //tasksLoaded_cv.notify_one();
 }
 
 void producer(int id, int elem) {
 
     for (int i = 0; i < elem; ++i) {
         
-        int taskId = globalTaskId++;  // Get the current ID and increment it
+        int taskId;  // Get the current ID and increment it
+        {
+            std::lock_guard<std::mutex> lock(idMutex);
+            taskId = globalTaskId++;
+        }
+        
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> distr(0, 1);
@@ -189,13 +182,17 @@ void producer(int id, int elem) {
         }
 
         TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
+
      
         taskBuffer.push(new Task(id, taskType, instructions, cpi));
+        
         taskCount++;
             
 
         printMutex.lock();
         std::cout << "Producer " << id << ": Task " << taskId << std::endl;
+        //std::cout << "Task " << taskId << " " << taskType << " " << instructions << " " << cpi << std::endl;
+        savetaskFile(taskId, taskType, instructions, cpi);
         printMutex.unlock();
         
                         
@@ -206,32 +203,10 @@ void producer(int id, int elem) {
         producer_cv.notify_one(); 
     }
     
+    
 
 }
 
-
-
-// void scheduler(){
-
-//     int chunksize = 10;
-
-//     if (useProducer) {
-
-//     std::unique_lock<std::mutex> lk(mtx2);
-//     producer_cv.wait(lk, []{ return activeProducers == 0; }); 
-    
-//         test.startScheduling(taskCount, consumerlist, taskBuffer);
-
-//         test.setSchedulersFinished(true);
-        
-//     } else if (!useProducer) {
-        
-//         test.startScheduling(taskCount, consumerlist, taskBuffer);
-
-//         test.setSchedulersFinished(true);
-//     }
-
-// }
 
 void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
     if (!todo) {
@@ -276,23 +251,21 @@ void scheduler(){
     int chunksize = 50;
 
     if (useProducer) {
+        std::unique_lock<std::mutex> lk(mtx2);
+        producer_cv.wait(lk, []{ 
+            return activeProducers == 0 && taskCount > 0; 
+        });
 
-    std::unique_lock<std::mutex> lk(mtx2);
-    producer_cv.wait(lk, []{ return activeProducers == 0; }); 
-    
-        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
 
-        test.setSchedulersFinished(true);
-        
-    } else if (!useProducer) {
-        
-        test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
-
-        test.setSchedulersFinished(true);
     }
 
-}
+    
+    
+    test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+    test.setSchedulersFinished(true);
+        
 
+}
 
 void consumer (int id){
 
@@ -344,8 +317,8 @@ void consumer (int id){
 
                 //std::this_thread::sleep_for(std::chrono::milliseconds(25)); 
 
-                if (useProducer) {
-                    float duration = taskPtr->run(clk_frq);
+                {
+                    float duration = taskPtr->runfromfile(clk_frq);
                     
                     //ver o tempo desde que começou a consumir
                     auto now = std::chrono::high_resolution_clock::now();
@@ -365,28 +338,6 @@ void consumer (int id){
                     
                     #endif 
                    
-                } else {
-                    float duration = taskPtr->runfromfile(clk_frq);
-
-                    
-                    //ver o tempo desde que começou a consumir
-                    auto now = std::chrono::high_resolution_clock::now();
-                    std::chrono::duration<float> elapsed = now - start;
-                    //std::cout << "Elapsed time: " << elapsed.count() << " seconds\n";
-
-                    #ifdef D_LOL
-
-                    std::string task_type;
-
-                    if (taskPtr->getType() == 0){task_type = " Regular ";} else {task_type="Irregular";}
-
-                    std::string temp2 = std::to_string(taskPtr->getId()) + "    |  " + task_type + "  | " + std::to_string(duration) + " | " + std::to_string(elapsed.count()) + " seconds\n";
-                    log_precursor.push_back(temp2);
-                    ++log_counter;
-
-                    
-                    #endif
-
                 }  
 
                 delete taskPtr;
@@ -793,7 +744,13 @@ int main(int argc, char* argv[]) {
         std::string pathWorkerFile = argv[3];
         int producers = std::stoi(argv[4]);
         useProducer=true;
-        activeProducers = producers;
+        
+         // Atomic counter initialization
+        std::atomic<int> remainingProducers(producers);
+        activeProducers.store(producers);
+
+        std::ofstream clearFile("tasksProduced.txt", std::ios::trunc);
+        clearFile.close();
 
         loadworkersFile(pathWorkerFile);
 
@@ -842,7 +799,15 @@ int main(int argc, char* argv[]) {
             producerThreads[i].join();
         }
 
+        
         producersFinished = true;
+
+        //loadtaskFile("tasksProduced.txt");
+        
+
+        tasksLoaded = true;
+
+        
         
               
         for (int i = 0; i < consumers; i++) {

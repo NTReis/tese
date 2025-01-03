@@ -37,7 +37,6 @@ boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer(0)
 std::mutex idMutex; // Mutex to protect the increment operation for globalTaskId
 std::mutex printMutex; // Mutex to protect the print operation
 std::mutex fileMutex; // Mutex to protect the file operation
-
 std::mutex mtx; // Mutex to protect the consumer workload
 std::mutex mtx2; 
 std::mutex consList; // Mutex to protect the consumer list
@@ -52,9 +51,19 @@ std::atomic<bool> useProducer=false;
 std::atomic<int> taskCount=0;
 std::atomic<int> consCount=0;
 std::atomic<int> activeProducers(0);
-int globalTaskId = 0;  // Global variable to store the task ID
+std::atomic<int> globalTaskId(0); // Global variable to store the task ID
 int log_counter = 0;
 Scheduler test;
+
+// Add these at the top with other globals
+std::mutex taskBufferMutex;
+std::atomic<int> totalTasksProduced{0};
+std::atomic<int> bufferSize{0};
+
+// Add these globals
+std::atomic<int> tasksScheduled{0};
+std::atomic<int> tasksConsumed{0};
+
 
 
 
@@ -183,21 +192,27 @@ void producer(int id, int elem) {
 
         TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
 
-     
-        taskBuffer.push(new Task(id, taskType, instructions, cpi));
-        
-        taskCount++;
-            
-
         printMutex.lock();
         std::cout << "Producer " << id << ": Task " << taskId << std::endl;
         //std::cout << "Task " << taskId << " " << taskType << " " << instructions << " " << cpi << std::endl;
         savetaskFile(taskId, taskType, instructions, cpi);
         printMutex.unlock();
+
         
+        taskBufferMutex.lock();
+        taskBuffer.push(new Task(taskId, taskType, instructions, cpi));
+
+        //std::cout << "Task " << taskId << " " << taskType << " " << instructions << " " << cpi << std::endl;
+            
+        bufferSize++;
+        totalTasksProduced++;
+        taskBufferMutex.unlock();
+
+                
+        taskCount++;
+
                         
     }
-
     activeProducers--;
     if (activeProducers == 0) {
         producer_cv.notify_one(); 
@@ -247,24 +262,37 @@ void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::l
 }
 
 void scheduler(){
+    int chunksize = 4;
 
-    int chunksize = 50;
 
-    if (useProducer) {
+   if (useProducer) {
+
+
         std::unique_lock<std::mutex> lk(mtx2);
         producer_cv.wait(lk, []{ 
             return activeProducers == 0 && taskCount > 0; 
         });
-
-
+        
+        
+        std::cout << "Scheduler activated after producers finished." << std::endl;
     }
 
+    std::cout << "Scheduler starting with chunksize: " << chunksize << "\n" << std::endl;
     
+
+    for(int i = 0; i<10; i++){
+        Task* taskPtr;
+        if (taskBuffer.pop(taskPtr)) {
+        
+        std::cout << taskPtr->getId() << " " << taskPtr->getType() << " " << taskPtr->getTemp() << " " << taskPtr->getCPI() << " " << std::endl;
+    };
+
     
-    test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
-    test.setSchedulersFinished(true);
+    //test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+    //test.setSchedulersFinished(true);
         
 
+}
 }
 
 void consumer (int id){
@@ -407,6 +435,9 @@ std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
     std::vector<LogEntry> logEntries;
     std::string line;
 
+    //DEGUB
+    std::ofstream tasksIDFile("tasksIDConsumed.csv");
+
     if (logFile.is_open()) {
         // Skip the header lines
         std::getline(logFile, line);
@@ -414,7 +445,7 @@ std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
 
     std::regex logEntryPattern(R"(Consumer\s(\d)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\sseconds)");
 
-        while (std::getline(logFile, line)) {
+    while (std::getline(logFile, line)) {
              std::smatch match;
         if (std::regex_search(line, match, logEntryPattern)) {
             LogEntry entry;
@@ -427,6 +458,8 @@ std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
 
             logEntries.push_back(entry);
 
+            tasksIDFile << entry.taskId << std::endl; //DEGUB
+
             // std::cout << "Parsed Log Entry: "
             //       << "Consumer ID: " << entry.consumerId
             //       << ", Consumer Type: " << entry.consumerType
@@ -437,6 +470,7 @@ std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
         }
         }
         logFile.close();
+        tasksIDFile.close();
 
         std::cout << "Total log entries read: " << logEntries.size() << std::endl;
     }
@@ -589,7 +623,7 @@ int main(int argc, char* argv[]) {
         int consumer_workload = (elem / consumers); 
 
         if (consumer_workload == 0) {
-            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be consumed. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
             consumers = elem;
         } 
 
@@ -645,7 +679,7 @@ int main(int argc, char* argv[]) {
         int consumer_workload = (elem / consumers); 
 
         if (consumer_workload == 0) {
-            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be consumed. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
             consumers = elem;
         } 
 

@@ -21,9 +21,9 @@
 #include <random>
 #include <atomic>
 #include "boost/lockfree/queue.hpp"
-#include <fstream>
 #include "Task.h"
 #include "Consumer.h"
+#include "Producer.h"
 #include "Scheduler.h"
 //#include "SchedulerPredict.h"
 //#include "SchedulerWS.h"
@@ -55,31 +55,50 @@ std::atomic<int> globalTaskId(0); // Global variable to store the task ID
 int log_counter = 0;
 Scheduler test;
 
-// Add these at the top with other globals
-std::mutex taskBufferMutex;
-std::atomic<int> totalTasksProduced{0};
-std::atomic<int> bufferSize{0};
 
-// Add these globals
-std::atomic<int> tasksScheduled{0};
-std::atomic<int> tasksConsumed{0};
-
-
-
-
-void savetaskFile(int id, TaskType type, float instructions, float cpi) {
-    //std::lock_guard<std::mutex> lock(fileMutex);
-
-    std::ofstream file("tasksProduced.txt", std::ios::app);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open tasks.txt" << std::endl;
-        return;
+void printTaskBuffer() {
+    std::lock_guard<std::mutex> lock(printMutex);
+    std::cout << "\n=== Task Buffer Contents ===\n";
+    int count = 0;
+    
+    // Create temporary buffer to store tasks while printing
+    std::vector<Task*> tempBuffer;
+    
+    // Pop and store all tasks
+    Task* task;
+    while (taskBuffer.pop(task)) {
+        tempBuffer.push_back(task);
+        std::cout << "Task " << task->getId() 
+                  << " | Type: " << (task->getType() == TaskType::Regular ? "Regular" : "Irregular")
+                  << " | Instructions: " << task->getInstructions()
+                  << " | CPI: " << task->getCPI() << "\n";
+        count++;
     }
-
-    file << id << ' ' << static_cast<int>(type) << ' ' << instructions << ' ' << cpi << '\n';
-
-    file.close();
+    
+    // Push all tasks back
+    for (Task* t : tempBuffer) {
+        while (!taskBuffer.push(t)) {
+            std::this_thread::yield();
+        }
+    }
+    
+    std::cout << "Total tasks in buffer: " << count << "\n"
+              << "========================\n\n";
 }
+
+
+// void savetaskFile(int id, TaskType type, float instructions, float cpi) {
+//     //std::lock_guard<std::mutex> lock(fileMutex);
+//
+//     std::ofstream file("tasksProduced.txt", std::ios::app);
+//     if (!file.is_open()) {
+//         std::cerr << "Failed to open tasks.txt" << std::endl;
+//         return;
+//     }
+//
+//     file << id << ' ' << static_cast<int>(type) << ' ' << instructions << ' ' << cpi << '\n';
+//     file.close();
+// }
 
 void loadtaskFile(const std::string& pathTaskFile) {
     std::ifstream file(pathTaskFile);
@@ -162,65 +181,31 @@ void loadworkersFile(const std::string& pathWorkerFile) {
 
 void producer(int id, int elem) {
 
+    int delay = 1;
+
+
+
+    Producer producer(id,delay,elem);
+
+
+    // Start producing tasks
     for (int i = 0; i < elem; ++i) {
-        
-        int taskId;  // Get the current ID and increment it
-        {
-            std::lock_guard<std::mutex> lock(idMutex);
-            taskId = globalTaskId++;
-        }
-        
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distr(0, 1);
-
-        int type = distr(gen);  // Randomly assign type as Regular (0) or Irregular (1)
-        float instructions = 10;
-        float cpi = 10;
-
-        if (type == Regular) {
-            std::normal_distribution<float> distribution(0.51, 0.5);
-            cpi = std::abs(distribution(gen));
-            instructions = 200;
-            
-        } else {
-            std::normal_distribution<float> distribution(0.51, 0.5);
-            float random_value = std::abs(distribution(gen));
-            cpi = std::abs(distribution(gen));
-            instructions = random_value * 200;
-        }
-
-        TaskType taskType = type == 0 ? TaskType::Regular : TaskType::Irregular;
-
-        printMutex.lock();
-        std::cout << "Producer " << id << ": Task " << taskId << std::endl;
-        //std::cout << "Task " << taskId << " " << taskType << " " << instructions << " " << cpi << std::endl;
-        savetaskFile(taskId, taskType, instructions, cpi);
-        printMutex.unlock();
-
-        
-        taskBufferMutex.lock();
-        taskBuffer.push(new Task(taskId, taskType, instructions, cpi));
-
-        //std::cout << "Task " << taskId << " " << taskType << " " << instructions << " " << cpi << std::endl;
-            
-        bufferSize++;
-        totalTasksProduced++;
-        taskBufferMutex.unlock();
-
-                
-        taskCount++;
-
-                        
+        producer.produceSingleTask();
     }
-    activeProducers--;
-    if (activeProducers == 0) {
-        producer_cv.notify_one(); 
+
+    //DEBUG
+    //std::cout << "ACTIVE PRODUCERS: " << activeProducers << "\n";
+
+    // Decrement active producers and notify if last one
+    if (--activeProducers == 0) {
+        producer_cv.notify_one();
     }
-    
-    
+
+        
+    //printTaskBuffer();
 
 }
+
 
 
 void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
@@ -288,6 +273,8 @@ void scheduler(){
     // };
 
     
+
+
     test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
     test.setSchedulersFinished(true);
         
@@ -570,7 +557,7 @@ int main(int argc, char* argv[]) {
             producers = elem;
         }
 
-        
+                
 
         std::thread producerThreads[producers];
 
@@ -816,10 +803,20 @@ int main(int argc, char* argv[]) {
         std::thread consumerThreads[consumers];
 
 
+            // Delay between task creation
+        int delay = 100;  // Example: 100ms delay
+
+
         for (int i = 0; i < producers; ++i) {
             int workload = producer_workload + (i < producer_remainder ? 1 : 0);
             producerThreads[i] = std::thread(producer, i, workload);
         }
+
+        // for (int i = 0; i < producers; ++i) {
+        //     int workload = producer_workload + (i < producer_remainder ? 1 : 0);
+        //     producerThreads[i] = std::thread(std::make_unique<Producer>(i, delay, workload, taskBuffer));
+        // }
+
 
         std::thread schedulerThread(scheduler);
 

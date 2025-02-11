@@ -87,19 +87,18 @@ void printTaskBuffer() {
 }
 
 
-void savetaskFile(int id, TaskType type, float instructions, float cpi) {
-    //std::lock_guard<std::mutex> lock(fileMutex);
-
-    std::ofstream file("tasksProduced.txt", std::ios::app);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open tasks.txt" << std::endl;
-        return;
-    }
-
-    file << id << ' ' << static_cast<int>(type) << ' ' << instructions << ' ' << cpi << '\n';
-
-    file.close();
-}
+// void savetaskFile(int id, TaskType type, float instructions, float cpi) {
+//     //std::lock_guard<std::mutex> lock(fileMutex);
+//
+//     std::ofstream file("tasksProduced.txt", std::ios::app);
+//     if (!file.is_open()) {
+//         std::cerr << "Failed to open tasks.txt" << std::endl;
+//         return;
+//     }
+//
+//     file << id << ' ' << static_cast<int>(type) << ' ' << instructions << ' ' << cpi << '\n';
+//     file.close();
+// }
 
 void loadtaskFile(const std::string& pathTaskFile) {
     std::ifstream file(pathTaskFile);
@@ -180,32 +179,27 @@ void loadworkersFile(const std::string& pathWorkerFile) {
     //tasksLoaded_cv.notify_one();
 }
 
-void producer(int id, int elem) {
-
-    int delay = 1;
-
-
-
-    Producer producer(id,delay,elem);
-
-
-    // Start producing tasks
-    for (int i = 0; i < elem; ++i) {
-        producer.produceSingleTask();
-    }
-
-    //DEBUG
-    //std::cout << "ACTIVE PRODUCERS: " << activeProducers << "\n";
-
-    // Decrement active producers and notify if last one
-    if (--activeProducers == 0) {
-        producer_cv.notify_one();
-    }
-
-        
-    //printTaskBuffer();
-
-}
+// void producer(int id, int elem) {
+//
+//     int delay = 1;
+//
+//     Producer producer(id,delay,elem);
+//
+//     // Start producing tasks
+//     for (int i = 0; i < elem; ++i) {
+//         producer.produceSingleTask();
+//     }
+//
+//     //DEBUG
+//     //std::cout << "ACTIVE PRODUCERS: " << activeProducers << "\n";
+//
+//     // Decrement active producers and notify if last one
+//     if (--activeProducers == 0) {
+//         producer_cv.notify_one();
+//     }
+//    
+//     //printTaskBuffer();
+// }
 
 
 
@@ -276,7 +270,7 @@ void scheduler(){
     
 
 
-    test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+    //test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
     test.setSchedulersFinished(true);
         
 
@@ -567,7 +561,7 @@ int main(int argc, char* argv[]) {
 
         for (int i = 0; i < producers; ++i) {
             int workload = producer_workload + (i < producer_remainder ? 1 : 0);
-            producerThreads[i] = std::thread(producer, i, workload);
+        //    producerThreads[i] = std::thread(producer, i, workload);
         }
 
         std::thread schedulerThread(scheduler);
@@ -783,74 +777,36 @@ int main(int argc, char* argv[]) {
         log_precursor.push_back( " -------------------------------------------------------------------------\n");   
         
         #endif
-        int consumers = consCount;
-
-        int consumer_workload = (elem / consumers); 
-        int producer_workload = (elem / producers);
-        int producer_remainder = elem % producers;
-
-
-        if (consumer_workload == 0) {
-            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
-            consumers = elem;
-        } 
-        if (producer_workload == 0) {
-            std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
-            producers = elem;
-        }
-
-        std::thread producerThreads[producers];
-
-        std::thread consumerThreads[consumers];
-
-
-            // Delay between task creation
-        int delay = 100;  // Example: 100ms delay
-
-
-        for (int i = 0; i < producers; ++i) {
-            int workload = producer_workload + (i < producer_remainder ? 1 : 0);
-            producerThreads[i] = std::thread(producer, i, workload);
-        }
-
-        // for (int i = 0; i < producers; ++i) {
-        //     int workload = producer_workload + (i < producer_remainder ? 1 : 0);
-        //     producerThreads[i] = std::thread(std::make_unique<Producer>(i, delay, workload, taskBuffer));
-        // }
-
-
-        std::thread schedulerThread(scheduler);
-
-
-        for (int i = 0; i < consumers; ++i) {
-            consumerThreads[i] = std::thread(consumer, i);
-        }
-
         
-        for (int i = 0; i < producers; i++) {
-            producerThreads[i].join();
-        }
+    int consumers = consCount;
+    int consumer_workload = (elem / consumers); 
 
-        
-        producersFinished = true;
+    if (consumer_workload == 0) {
+        std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+        consumers = elem;
+    } 
 
-        //loadtaskFile("tasksProduced.txt");
-        
+    std::thread consumerThreads[consumers];
 
-        tasksLoaded = true;
+    // Single scheduler thread that handles both scheduling and producer management
+    std::thread schedulerThread([&]() {
+        test.startStreamingScheduling(producers, elem, 10, consumerlist, taskBuffer);
+    });
 
-        
-        
-              
-        for (int i = 0; i < consumers; i++) {
-            consumerThreads[i].join();
-        }
+    // Create consumer threads
+    for (int i = 0; i < consumers; ++i) {
+        consumerThreads[i] = std::thread(consumer, i);
+    }
 
-        schedulerThread.join();
+    // Join threads
+    schedulerThread.join();
+    
+    for (int i = 0; i < consumers; i++) {
+        consumerThreads[i].join();
+    }
 
-        std::vector<LogEntry> logEntries = readLogFile("log.csv");
-
-        execOverview(logEntries, "log.csv");
+    std::vector<LogEntry> logEntries = readLogFile("log.csv");
+    execOverview(logEntries, "log.csv");
        
     } else if (command == "-help" && argc == 2) {
         usage();

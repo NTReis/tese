@@ -526,6 +526,14 @@ int main(int argc, char* argv[]) {
             cpu=consumers; 
         }
 
+
+        // Atomic counter initialization
+        std::atomic<int> remainingProducers(producers);
+        activeProducers.store(producers);
+ 
+        std::ofstream clearFile("tasksProduced.txt", std::ios::trunc);
+        clearFile.close();
+ 
         saveworkersFile(consumers, cpu);
         loadworkersFile("workers.txt");
         useProducer=true;
@@ -539,54 +547,33 @@ int main(int argc, char* argv[]) {
         #endif
 
         int consumer_workload = (elem / consumers); 
-        int producer_workload = (elem / producers);
-        int producer_remainder = elem % producers;
 
 
         if (consumer_workload == 0) {
             std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
             consumers = elem;
         } 
-        if (producer_workload == 0) {
-            std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
-            producers = elem;
-        }
-
-                
-
-        std::thread producerThreads[producers];
 
         std::thread consumerThreads[consumers];
 
-
-        for (int i = 0; i < producers; ++i) {
-            int workload = producer_workload + (i < producer_remainder ? 1 : 0);
-        //    producerThreads[i] = std::thread(producer, i, workload);
-        }
-
-        std::thread schedulerThread(scheduler);
-            
-
+        // Single scheduler thread that handles both scheduling and producer management
+        std::thread schedulerThread([&]() {
+            test.startStreamingScheduling(producers, elem, 10, consumerlist, taskBuffer);
+        });
+    
+        // Create consumer threads
         for (int i = 0; i < consumers; ++i) {
             consumerThreads[i] = std::thread(consumer, i);
         }
-
+    
+        // Join threads
+        schedulerThread.join();
         
-        for (int i = 0; i < producers; i++) {
-            producerThreads[i].join();
-        }
-
-        producersFinished = true;
-        
-
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
-
-        schedulerThread.join();
-
+    
         std::vector<LogEntry> logEntries = readLogFile("log.csv");
-
         execOverview(logEntries, "log.csv");
        
 

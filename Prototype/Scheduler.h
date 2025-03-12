@@ -14,134 +14,130 @@
 #include <fstream>
 #include "Consumer.h"
 #include "Task.h"
-#include "Producer.h"
 
-class Scheduler {
+class Scheduler{
+
 private:
-    std::mutex mtx; // Mutex to protect the print operation
-    std::atomic<int> tasksProduced{0};
-    std::atomic<int> tasksScheduled{0};
-    std::atomic<bool> producersActive{true};
-    std::condition_variable cv;
-    std::mutex cvMutex;
-    int totalExpectedTasks;
-    
-    void producerThread(int producerId, int delay, int workload) {
-        auto producer = std::make_unique<Producer>(producerId, delay, workload);
-        
-        for (int i = 0; i < workload && producersActive; ++i) {
-            producer->produceSingleTask();
-            tasksProduced++;
-            
-            // Notify scheduler that new tasks are available
-            cv.notify_one();
-        }
-        
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            std::cout << "Producer " << producerId << " finished." << std::endl;
-        }
-    }
+
+std::mutex mtx; // Mutex to protect the print operation
+
+bool isTaskBufferEmpty(boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer) {
+    return taskBuffer.empty();
+
+
+}
+
+int tasks2schedule;
 
 public:
-    bool schedulers_finished = false;
 
-    Scheduler() : totalExpectedTasks(0) {}
+bool schedulers_finished = false;
 
-    void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-        bool flag = true;
-        int tasksDistributed = 0;
-        
-        cons.copyTasks();
-        
-        mtx.lock();
-        if (chunkSize > 0) {
-            std::cout << "Scheduler distributing up to " << chunkSize << " tasks to Consumer " << cons.getId() << "\n" << std::endl;
-        }
-        mtx.unlock();
+Scheduler(){
+    }
 
-        for (int j = 0; j < chunkSize && flag; ++j) {
-            Task* taskPtr;
-            if (taskBuffer.pop(taskPtr)) {
-                cons.pushTask(taskPtr);
-                tasksDistributed++;
-                tasksScheduled++;
-            } else {
-                flag = false;
-            }
-        }
-        
-        if (tasksDistributed > 0) {
-            cons.wrkld += tasksDistributed;
-        }
-        
-        if (cons.getNeedMoreTasks()) {
-            cons.setNeedMoreTasks(false);
+
+void distributeTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+
+    bool flag = true;
+    
+    cons.copyTasks();
+
+    int currentWrkld = cons.getWrkld();
+
+    cons.setWrkld(chunkSize+currentWrkld);
+    
+
+    mtx.lock();
+    if (chunkSize > 0){
+        std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << "\n" << std::endl;
+    }
+ 
+
+    for (int j = 0; j < chunkSize && flag; ++j) {
+        Task* taskPtr;
+        if (taskBuffer.pop(taskPtr)) {
+            cons.pushTask(taskPtr);
+                        
+        } else {
+            flag = false;
+          // taskBuffer is empty, break the loop
         }
     }
 
-    void startStreamingScheduling(int numProducers, int totalTasks, int chunkSize, std::vector<Consumer>& consumerlist, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
-        
-        totalExpectedTasks = totalTasks;
-        tasksProduced = 0;
-        tasksScheduled = 0;
-        
-        // Start producer threads
-        std::vector<std::thread> producerThreads;
-        int baseWorkload = totalTasks / numProducers;
-        int remainder = totalTasks % numProducers;
-        
-        for (int i = 0; i < numProducers; ++i) {
-            int workload = baseWorkload + (i < remainder ? 1 : 0);
-            producerThreads.push_back(std::thread(&Scheduler::producerThread, this, i, 1, workload));
-        }
+    tasks2schedule -= chunkSize;
 
-        int totalConsumers = consumerlist.size();
-
-        // Continue scheduling while we haven't scheduled all tasks
-        while (tasksScheduled < totalExpectedTasks) {
-            // Wait for new tasks
-            {
-                std::unique_lock<std::mutex> lock(cvMutex);
-                cv.wait_for(lock, std::chrono::milliseconds(100),
-                           [this, &taskBuffer]() { 
-                               return !taskBuffer.empty() || tasksScheduled >= totalExpectedTasks; 
-                           });
-            }
-
-            // Schedule available tasks
-            for (int i = 0; i < totalConsumers && tasksScheduled < totalExpectedTasks; ++i) {
-                Consumer& cons = consumerlist[i];
-                if (cons.getNeedMoreTasks() || cons.getWrkld() == 0) {
-                    int remainingTasks = totalExpectedTasks - tasksScheduled;
-                    int currentChunkSize = std::min(chunkSize, remainingTasks);
-                    if (currentChunkSize > 0) {
-                        distributeTasks(cons, currentChunkSize, taskBuffer);
-                    }
-                }
-            }
-        }
-
-        // Clean up producer threads
-        producersActive = false;
-        for (auto& thread : producerThreads) {
-            if (thread.joinable()) {
-                thread.join();
-            }
-        }
-        
-        setSchedulersFinished(true);
+    mtx.unlock();   
+    
+    
+    if (cons.getNeedMoreTasks()){
+        cons.setNeedMoreTasks(false);
     }
+}
 
-    void setSchedulersFinished(bool value) {
-        std::lock_guard<std::mutex> lock(mtx);
-        schedulers_finished = value;
-    }
+void startScheduling(int totalTasks, int chunkSize, std::vector<Consumer>& consumerlist, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+    
+    int totalConsumers = consumerlist.size();
 
-    bool schedulerFinished() {
-        std::lock_guard<std::mutex> lock(mtx);
-        return schedulers_finished;
+    tasks2schedule = totalTasks;
+
+    for (int i = 0; i < totalConsumers; ++i) {
+        Consumer& cons = consumerlist[i];
+        if (tasks2schedule >= chunkSize){
+            distributeTasks(cons, chunkSize, taskBuffer);
+            //totalTasks -= chunkSize;
+        } else {
+            distributeTasks(cons, tasks2schedule, taskBuffer);
+            //totalTasks = 0;
+        }
+    } 
+
+    //std::cout << "IM HERE\n" ;
+
+    while (!taskBuffer.empty() && tasks2schedule > 0){
+        
+        // Check if there are tasks left. I have this -1 because for some reason it always starts with 1 task left, but i dont know where it comes from
+        for (int i = 0; i < totalConsumers; ++i){
+            //std::cout << "IM HERE\n" ;
+
+            Consumer& cons = consumerlist[i];
+
+            //std::cout << cons.getNeedMoreTasks();
+
+            if (cons.getNeedMoreTasks()  && tasks2schedule >= chunkSize){
+                distributeTasks(cons, chunkSize, taskBuffer);
+                //totalTasks -= chunkSize;
+            } else if (cons.getNeedMoreTasks() && tasks2schedule < chunkSize){
+                //std::cout << "IM HERE\n" ;
+                distributeTasks(cons, tasks2schedule, taskBuffer);
+                //totalTasks = 0;
+            }  if (cons.getNeedMoreTasks()) {
+                cons.setNeedMoreTasks(false);
+            }
+        }
+        
     }
+    
+}
+
+void setSchedulersFinished(bool value){
+    mtx.lock();
+    schedulers_finished = value;
+    mtx.unlock();
+}
+
+bool schedulerFinished(){
+
+    mtx.lock();
+
+    bool value = schedulers_finished;
+
+    mtx.unlock();
+
+    return value;
+
+}
+
 };
 
 #endif

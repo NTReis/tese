@@ -25,6 +25,7 @@
 #include "Consumer.h"
 #include "Producer.h"
 #include "Scheduler.h"
+//#include "SchedulerStreaming.h"
 //#include "SchedulerPredict.h"
 //#include "SchedulerWS.h"
 //#include "Heft.h"
@@ -53,6 +54,7 @@ std::atomic<int> consCount=0;
 std::atomic<int> activeProducers(0);
 std::atomic<int> globalTaskId(0); // Global variable to store the task ID
 int log_counter = 0;
+float flag;
 Scheduler test;
 
 
@@ -179,28 +181,52 @@ void loadworkersFile(const std::string& pathWorkerFile) {
     //tasksLoaded_cv.notify_one();
 }
 
-// void producer(int id, int elem) {
-//
-//     int delay = 1;
-//
-//     Producer producer(id,delay,elem);
-//
-//     // Start producing tasks
-//     for (int i = 0; i < elem; ++i) {
-//         producer.produceSingleTask();
-//     }
-//
-//     //DEBUG
-//     //std::cout << "ACTIVE PRODUCERS: " << activeProducers << "\n";
-//
-//     // Decrement active producers and notify if last one
-//     if (--activeProducers == 0) {
-//         producer_cv.notify_one();
-//     }
-//    
-//     //printTaskBuffer();
-// }
 
+void producer(int id, int elem) {
+
+    int delay = 1;
+
+    Producer producer(id,delay,elem);
+
+    // Start producing tasks
+    for (int i = 0; i < elem; ++i) {
+        producer.produceSingleTask();
+    }
+
+    //DEBUG
+    //std::cout << "ACTIVE PRODUCERS: " << activeProducers << "\n";
+
+    // Decrement active producers and notify if last one
+    if (--activeProducers == 0) {
+        producer_cv.notify_all();
+    }
+   
+    //printTaskBuffer();
+}
+
+
+void setup_producers(int num_producers, int total_elements) {
+    activeProducers = num_producers;
+    int producer_workload = total_elements / num_producers;
+    int producer_remainder = total_elements % num_producers;
+    
+    std::vector<std::thread> producerThreads;
+    producerThreads.reserve(num_producers);
+    
+    // Create and start producer threads
+    for (int i = 0; i < num_producers; ++i) {
+        int workload = producer_workload + (i < producer_remainder ? 1 : 0);
+        producerThreads.push_back(std::thread(producer, i, workload));  // Use push_back instead
+    }
+
+    
+    
+    // Join all producer threads
+    for (auto& thread : producerThreads) {
+        thread.join();
+    }
+
+}
 
 
 void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
@@ -242,10 +268,13 @@ void simulateError (bool todo, int error, boost::lockfree::queue<Task*, boost::l
 }
 
 void scheduler(){
+
     int chunksize = 10;
 
+    flag = chunksize * 0.2;
 
-   if (useProducer) {
+
+    if (useProducer) {
 
 
         std::unique_lock<std::mutex> lk(mtx2);
@@ -269,13 +298,57 @@ void scheduler(){
 
     
 
-
-    //test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+    test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+    //test.startStreamingScheduling(activeProducers ,taskCount, chunksize, consumerlist, taskBuffer);
     test.setSchedulersFinished(true);
         
 
 }
 
+void scheduler_streaming() {
+    int chunksize = 20;
+    
+    std::cout << "Streaming scheduler starting with chunksize: " << chunksize << "\n" << std::endl;
+    
+    // Keep scheduling until all producers are done AND task buffer is empty
+    while (true) {
+        // Check if we're done (producers finished AND no more tasks)
+        if (activeProducers == 0 && taskBuffer.empty()) {
+            // Double check after a small sleep to avoid race conditions
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (activeProducers == 0 && taskBuffer.empty()) {
+                break;  // Exit the loop if condition is still true after waiting
+            }
+        }
+
+        // Count tasks 
+        size_t tasksAvailable = 0;
+        std::vector<Task*> tempTasks;
+        Task* taskPtr;
+        
+        
+        while (taskBuffer.pop(taskPtr)) {
+            tasksAvailable++;
+            tempTasks.push_back(taskPtr);
+        }
+        
+        
+        for (Task* task : tempTasks) {
+            taskBuffer.push(task);
+        }
+
+        // Schedule any available tasks if buffer has enough tasks or producers are done
+        if (tasksAvailable > 0 && (tasksAvailable >= chunksize || activeProducers == 0)) {
+            test.startScheduling(taskCount, chunksize, consumerlist, taskBuffer);
+        }
+        
+        // Short sleep
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    std::cout << "Streaming scheduler finished." << std::endl;
+    test.setSchedulersFinished(true);
+}
 
 void consumer (int id){
 
@@ -289,13 +362,12 @@ void consumer (int id){
     int i = taskCount;
     int workload = cons.getWrkld(); 
 
-    float flag = workload * 0.2;
+    // std::cout << "THIS IS THE WORKLOAD: " << workload << "\n";
 
     auto start = std::chrono::high_resolution_clock::now();
 
     while(!test.schedulerFinished() || !cons.isTaskBufferEmpty()) {
-        //cons.startConsuming();
-        
+            
         
 
         if (!cons.isTaskBufferEmpty()){
@@ -366,15 +438,24 @@ void consumer (int id){
             //mtx.lock();
             if (cons.wrkld > 0) {
                 --cons.wrkld;
+
+                if (cons.wrkld < flag && cons.wrkld > 0) {
+                    cons.setNeedMoreTasks(true);
+
+                    //std::cout << "FLAG!!" << cons.wrkld << "\n";
+                    
+                 }
+                
             }
 
-            if (cons.wrkld < flag && cons.wrkld > 0) {
-               cons.setNeedMoreTasks(true);
-            }
+            // if (cons.wrkld < flag && cons.wrkld > 0) {
+            //    cons.setNeedMoreTasks(true);
+               
+            // }
             //mtx.unlock();
 
         }      
-        //cons.stopConsuming();  
+        
      
         
     } 
@@ -398,7 +479,12 @@ void consumer (int id){
 }
 
 void usage() {
-    std::cout << "Usage: program_name [-n num_elems num_consumers num_cpu num_producers | -f path_worker_file path_tasks_file | -cc num_consumers num_cpu path_tasks_file | -cp num_elems path_worker_file num_producers | -pred path_worker_file path_tasks_file error% ]\n";
+    std::cout << "Usage: program_name "
+              << "[-n num_elems num_consumers num_cpu num_producers [stream] | "
+              << "-f path_worker_file path_tasks_file  | "
+              << "-cc num_consumers num_cpu path_tasks_file  | "
+              << "-cp num_elems path_worker_file num_producers [stream] | "
+              << "-pred path_worker_file path_tasks_file error%]\n";
 }
 
 struct LogEntry {
@@ -425,7 +511,7 @@ std::vector<LogEntry> readLogFile (const std::string& pathLogFile){
         std::getline(logFile, line);
         std::getline(logFile, line);
 
-    std::regex logEntryPattern(R"(Consumer\s(\d)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\sseconds)");
+    std::regex logEntryPattern(R"(Consumer\s(\d+)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+)\s*\|\s*([a-zA-Z]+)\s*\|\s*(\d+\.\d+)\s*\|\s*(\d+\.\d+)\sseconds)");
 
     while (std::getline(logFile, line)) {
              std::smatch match;
@@ -515,25 +601,22 @@ int main(int argc, char* argv[]) {
     }
 
     std::string command = argv[1];
-    if (command == "-n" && argc == 6) {
+    if (command == "-n" && (argc == 6 || argc == 7)) {
         int elem = std::stoi(argv[2]);
         int consumers = std::stoi(argv[3]);
         int cpu = std::stoi(argv[4]);
         int producers = std::stoi(argv[5]);
+        bool streamingMode = (argc == 7 && std::string(argv[6]) == "stream");
+
+        if (streamingMode) {
+            std::cout << "Using streaming mode: producers and scheduler run in parallel\n";
+        }
 
         if (cpu>consumers) {
             std::cerr << "Error: The number of consumers is less than the number of CPU consumers. The number of cpu's will be reduced from " << cpu << " to " << consumers << ".\n" << std::endl;
             cpu=consumers; 
         }
 
-
-        // Atomic counter initialization
-        std::atomic<int> remainingProducers(producers);
-        activeProducers.store(producers);
- 
-        std::ofstream clearFile("tasksProduced.txt", std::ios::trunc);
-        clearFile.close();
- 
         saveworkersFile(consumers, cpu);
         loadworkersFile("workers.txt");
         useProducer=true;
@@ -547,35 +630,55 @@ int main(int argc, char* argv[]) {
         #endif
 
         int consumer_workload = (elem / consumers); 
+        int producer_workload = (elem / producers);
+        int producer_remainder = elem % producers;
 
 
         if (consumer_workload == 0) {
             std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
             consumers = elem;
         } 
+        if (producer_workload == 0) {
+            std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
+            producers = elem;
+        }
 
+                
+
+        std::thread producer_setup(setup_producers, producers, elem);
+     
         std::thread consumerThreads[consumers];
 
-        // Single scheduler thread that handles both scheduling and producer management
-        std::thread schedulerThread([&]() {
-            test.startStreamingScheduling(producers, elem, 10, consumerlist, taskBuffer);
-        });
-    
-        // Create consumer threads
+        
+        std::thread schedulerThread;
+
+        if (streamingMode) {
+            schedulerThread = std::thread(scheduler_streaming);
+        } else {
+            schedulerThread = std::thread(scheduler);
+        }
+        
+            
+
         for (int i = 0; i < consumers; ++i) {
             consumerThreads[i] = std::thread(consumer, i);
         }
-    
-        // Join threads
-        schedulerThread.join();
+
         
+        producer_setup.join();
+
+        producersFinished = true;
+        
+
         for (int i = 0; i < consumers; i++) {
             consumerThreads[i].join();
         }
-    
+
+        schedulerThread.join();
+
         std::vector<LogEntry> logEntries = readLogFile("log.csv");
+
         execOverview(logEntries, "log.csv");
-       
 
     } else if (command == "-f" && argc == 4) {
         std::string pathWorkerFile = argv[2];
@@ -742,15 +845,18 @@ int main(int argc, char* argv[]) {
 
         execOverview(logEntries, "log.csv");
 
-    } else if (command == "-cp" && argc == 5) {
+    } else if (command == "-cp" && argc == 5 || argc == 6) {
         int elem = std::stoi(argv[2]);
         std::string pathWorkerFile = argv[3];
         int producers = std::stoi(argv[4]);
+        bool streamingMode = (argc == 6 && std::string(argv[5]) == "stream");
+
+        if (streamingMode) {
+            std::cout << "Using streaming mode: producers and scheduler run in parallel\n";
+        }
+
         useProducer=true;
         
-         // Atomic counter initialization
-        std::atomic<int> remainingProducers(producers);
-        activeProducers.store(producers);
 
         std::ofstream clearFile("tasksProduced.txt", std::ios::trunc);
         clearFile.close();
@@ -764,36 +870,60 @@ int main(int argc, char* argv[]) {
         log_precursor.push_back( " -------------------------------------------------------------------------\n");   
         
         #endif
+        int consumers = consCount;
+
+        int consumer_workload = (elem / consumers); 
+        int producer_workload = (elem / producers);
+        int producer_remainder = elem % producers;
+
+
+        if (consumer_workload == 0) {
+            std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
+            consumers = elem;
+        } 
+        if (producer_workload == 0) {
+            std::cout << "WARNING: The number of producers is greater than the number of elements to be produced. The number of producers will be reduced from " << producers << " to " << elem << ".\n" << std::endl;
+            producers = elem;
+        }
+
+
+
+        std::thread producer_setup(setup_producers, producers, elem);
+
+        std::thread consumerThreads[consumers];
+
+        std::thread schedulerThread;
+
+        if (streamingMode) {
+            schedulerThread = std::thread(scheduler_streaming);
+        } else {
+            schedulerThread = std::thread(scheduler);
+        }
+
+        for (int i = 0; i < consumers; ++i) {
+            consumerThreads[i] = std::thread(consumer, i);
+        }
+
         
-    int consumers = consCount;
-    int consumer_workload = (elem / consumers); 
 
-    if (consumer_workload == 0) {
-        std::cout << "WARNING: The number of consumers is greater than the number of elements to be produced. The number of consumers will be reduced from " << consumers << " to " << elem << ".\n" << std::endl;
-        consumers = elem;
-    } 
+        producer_setup.join();
 
-    std::thread consumerThreads[consumers];
+        producersFinished = true;
 
-    // Single scheduler thread that handles both scheduling and producer management
-    std::thread schedulerThread([&]() {
-        test.startStreamingScheduling(producers, elem, 10, consumerlist, taskBuffer);
-    });
+        //loadtaskFile("tasksProduced.txt");
+        
+        tasksLoaded = true;
+        
+              
+        for (int i = 0; i < consumers; i++) {
+            consumerThreads[i].join();
+        }
 
-    // Create consumer threads
-    for (int i = 0; i < consumers; ++i) {
-        consumerThreads[i] = std::thread(consumer, i);
-    }
+        schedulerThread.join();
 
-    // Join threads
-    schedulerThread.join();
-    
-    for (int i = 0; i < consumers; i++) {
-        consumerThreads[i].join();
-    }
+        std::vector<LogEntry> logEntries = readLogFile("log.csv");
 
-    std::vector<LogEntry> logEntries = readLogFile("log.csv");
-    execOverview(logEntries, "log.csv");
+        execOverview(logEntries, "log.csv");
        
     } else if (command == "-help" && argc == 2) {
         usage();

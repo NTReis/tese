@@ -22,9 +22,9 @@ private:
 std::mutex mtx;
 bool isTaskBufferEmpty(boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>> taskBuffer) {
     return taskBuffer.empty();
-
-
 }
+
+std::atomic<int> tasks2schedule{0};
 
 public:
 
@@ -45,7 +45,7 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
 
  
 
-    for (j = 0; flag; ++j) {
+    while(flag) {
         Task* taskPtr;
         if (taskBuffer.pop(taskPtr)) {
             float aux = taskPtr->getPred();
@@ -53,11 +53,10 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
             if (new_tempo <= controlPred) {
                 tempo = new_tempo;
                 cons.pushTask(taskPtr);
+                j++;
             } else {
                 taskBuffer.push(taskPtr);  // Put the task back
                 flag = false; // Exceeds controlPred, break the loop
-                j--; 
-                  
             }
         } else {
             flag = false;  // taskBuffer is empty, break the loop
@@ -66,9 +65,10 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
       
 
     if (j > 0){
-        std::cout << "Scheduler distributing " << j << " tasks to Consumer " << cons.getId()<< " with the time of: " << tempo << "\n" << std::endl;
+        std::cout << "\nScheduler distributing " << j << " tasks to Consumer " << cons.getId()<< " with the time of: " << tempo << "\n" << "tasks left:" << tasks2schedule << "\n" << std::endl;
     }
-    mtx.unlock(); 
+
+    
 
     cons.wrkld += j;
     
@@ -77,12 +77,13 @@ int distributePredictedTasks(Consumer& cons, float controlPred, boost::lockfree:
         cons.setNeedMoreTasks(false);
     }
 
+    mtx.unlock(); 
     
 
     return j;
 }
 
-float distributeFirstTask(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
+float distributeFirstTasks(Consumer& cons, int chunkSize, boost::lockfree::queue<Task*, boost::lockfree::fixed_sized<false>>& taskBuffer) {
 
     bool flag = true;
 
@@ -93,7 +94,7 @@ float distributeFirstTask(Consumer& cons, int chunkSize, boost::lockfree::queue<
 
     mtx.lock();
     if (chunkSize > 0){
-        std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << std::endl;
+        std::cout << "Scheduler distributing " << chunkSize << " tasks to Consumer " << cons.getId() << "tasks left:" << tasks2schedule << "\n" << std::endl;
     }
  
 
@@ -113,15 +114,15 @@ float distributeFirstTask(Consumer& cons, int chunkSize, boost::lockfree::queue<
 
     std::cout << "Control time of " << result << " ms\n" << std::endl;
 
-    mtx.unlock();   
-    
-    
-
     if (cons.getNeedMoreTasks()){
         cons.setNeedMoreTasks(false);
     }
 
-    return result;
+    mtx.unlock();   
+    
+    
+
+    return 500;
 }
 
 
@@ -129,28 +130,42 @@ void startScheduling(int totalTasks, int chunkSize, std::vector<Consumer>& consu
     
     int totalConsumers = consumerlist.size();
 
+    tasks2schedule = totalTasks;
+
     Consumer& cons = consumerlist[0];
-    float controlPred = distributeFirstTask(cons, chunkSize, taskBuffer);
-    totalTasks -= chunkSize;
+    float controlPred = distributeFirstTasks(cons, chunkSize, taskBuffer);
+    tasks2schedule -= chunkSize;
     int restantes = 0;
 
 
-    for (int i = 1; i < totalConsumers && totalTasks > 0; ++i) {
+    for (int i = 0; i < totalConsumers && tasks2schedule > 0; ++i) {
         Consumer& cons = consumerlist[i];
         
         restantes = distributePredictedTasks(cons, controlPred, taskBuffer);
-        totalTasks -= restantes;
-
-
+        tasks2schedule = std::max(0, tasks2schedule - restantes);
         
     } 
+    std::cout << "Tasks left to schedule: " << tasks2schedule << ", Queue empty: " << taskBuffer.empty() << std::endl;
 
-    while (!taskBuffer.empty() && totalTasks > -1) {
+    while (tasks2schedule > 0 && !taskBuffer.empty()){
+        
         for (int i = 0; i < totalConsumers; ++i) {
             Consumer& cons = consumerlist[i];
             if (cons.getNeedMoreTasks()) {
+
+                std::cout << "hey";
+
+                //std::cout << "\nConsumer " << cons.getId() << " needs more tasks.\n" << std::endl;
+
                 int distributed = distributePredictedTasks(cons, controlPred, taskBuffer);
-                totalTasks -= distributed;
+                tasks2schedule = std::max(0, tasks2schedule - distributed);
+
+                // // Debug print after distributing tasks
+                // std::cout << "Distributed " << distributed << " tasks to Consumer " << cons.getId() 
+                // << ". Tasks left to schedule: " << tasks2schedule << std::endl;
+
+
+
                 if (distributed == 0) {
                     cons.setNeedMoreTasks(false); //Neste momento o consumidor pede tasks quando tiver as restantes 20%, se quiser alterar tenho que mudar na função consumer no LockFree.cpp
                 }

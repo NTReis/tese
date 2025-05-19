@@ -21,17 +21,27 @@ enum ConsumerType {
 class Consumer {
 
 private:
-    //rigtorp::SPSCQueue<Task*> taskBufferConsumer{128};
 
-    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{128}; 
+    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{100000}; 
 
     std::vector<Task*> taskBufferConsumerCopy;
 
     bool need_more_tasks = false;
     
-    std::mutex mtx;
+    
+
+    std::condition_variable cv;
+    std::mutex mutex;
+    bool is_consuming = false;
 
 public:
+    std::mutex mtx;
+
+
+    float getTaskCount() {
+        std::lock_guard<std::mutex> lock(mtx);
+        return taskBufferConsumer.read_available();
+    }
 
     void copyTasks(){
         std::lock_guard<std::mutex> lock(mtx);
@@ -45,7 +55,9 @@ public:
         }
 
     }
- 
+
+    
+    
     void setNeedMoreTasks(bool value) {
         
         mtx.lock();
@@ -90,6 +102,9 @@ public:
     }
 
 
+    void setWrkld(int value) {
+        wrkld = value;
+    }
 
     // Construtor
     Consumer() = default;
@@ -116,7 +131,7 @@ public:
 
 
     Consumer(const Consumer& other) : 
-    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), need_more_tasks(other.need_more_tasks), taskBufferConsumer(128), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
+    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), need_more_tasks(other.need_more_tasks), taskBufferConsumer(100000), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
     for (Task* task : taskBufferConsumerCopy) {
             taskBufferConsumer.push(task);
         }
@@ -125,7 +140,7 @@ public:
     //não dá para aceder ao indice do taskBufferConsumer então criei uma cópia e copio tudo de uma vez
 
     Consumer(int id, ConsumerType type, float frequency) 
-        : id(id), type(type), frequency(frequency), taskBufferConsumer(128) {} 
+        : id(id), type(type), frequency(frequency), taskBufferConsumer(100000) {} 
 
 
 
@@ -154,32 +169,6 @@ public:
             }
     }
 
-    //     RIGTORP
-    //     ~Consumer() {
-    //     while (!taskBufferConsumer.empty()) {
-    //         Task** taskPtr = taskBufferConsumer.front();
-    //         taskBufferConsumer.pop();
-    //         delete *taskPtr; 
-    //     }
-    //    }
-
-    // bool pushTask(Task* task) {
-    // bool success = taskBufferConsumer.push(task);
-    //     if (success) {
-    //         taskBufferConsumerCopy.push_back(task);
-    //     }
-    //     return success;
-    // }
-
-    // bool isTaskBufferEmpty(){
-    //     return taskBufferConsumer.empty();
-    // }
-
-    // bool popTask(Task* task) {
-    //     Task** task = taskBufferConsumer.front();
-    //     taskBufferConsumer.pop();
-    //     taskBufferConsumerCopy.erase(taskBufferConsumerCopy.begin());
-    // }
 
 
 

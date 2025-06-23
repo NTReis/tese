@@ -4,6 +4,7 @@
 #include <iostream>
 #include <random>
 #include <unistd.h>
+#include <mutex>
 
 enum TaskType {
     Regular,
@@ -14,6 +15,32 @@ class Task {
 public:
     int id;
     int regular;
+    float rank;
+    int temp;
+    int simulated_error;
+
+    float computation_avg=10;
+
+    std::vector<int> parents;
+
+
+    float getTemp() const {
+        return static_cast<float>(cpi * instructions);
+    }
+
+    float getPred() const {
+        return static_cast<float>(simulated_error);
+    }
+
+    void setError(float error) {
+        simulated_error = error;
+    }
+
+    
+    float getRank() const {
+        return rank;
+    }
+
     int getId() const {
         return id;
     }
@@ -26,6 +53,7 @@ public:
     double getCPI() const {
         return cpi;
     }
+    
     TaskType getType() const {
     if (regular == 0) {
         return TaskType::Regular;
@@ -62,13 +90,12 @@ public:
         
         if (regular==0) {
 
-            
-
             TaskType type = Regular;
             instructions = 200;
             cpi = 1.0;
             float duration = (instructions * cpi)/frequency;
 
+            
             std::cout << "Regular task " << id << ": " << duration << "\n" << std::flush;
             
             usleep(duration);
@@ -76,8 +103,6 @@ public:
             return(duration);
 
         } else {
-
-            
 
             TaskType type = Irregular;
             std::cout << "Irregular task " << id << ": ";
@@ -103,13 +128,14 @@ public:
     }
 
     float runfromfile(float frequency) {
+        std::lock_guard<std::mutex> lock(taskMutex);
         
         if (regular == 0) {
 
             float duration = (instructions * cpi)/frequency;
-            
+      
             std::cout << "Regular task " << id << ": " << duration <<  "\n";
-
+        
             usleep(duration);
 
             return duration;
@@ -117,7 +143,7 @@ public:
         } else {
 
             float duration = (instructions * cpi)/frequency;
-
+            
             std::cout << "Irregular task " << id << ": " << duration << "\n";
         
             usleep(duration);
@@ -136,7 +162,11 @@ private:
 
         regular = distribution(gen);  // 0 corresponds to false, 1 corresponds to true
     }
+
+    std::mutex taskMutex;
 };
+
+
 
 #endif
 

@@ -9,7 +9,6 @@
 #include <boost/lockfree/spsc_queue.hpp>
 #include "Task.h" 
 #include <vector>
-#include "SPSCQueue.h"
 #include <mutex>
 
 
@@ -22,7 +21,8 @@ class Consumer {
 
 private:
 
-    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{100000}; 
+
+    boost::lockfree::spsc_queue<Task*> taskBufferConsumer{400000}; 
 
     std::vector<Task*> taskBufferConsumerCopy;
 
@@ -131,7 +131,7 @@ public:
 
 
     Consumer(const Consumer& other) : 
-    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), need_more_tasks(other.need_more_tasks), taskBufferConsumer(100000), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
+    id(other.id), type(other.type), frequency(other.frequency), wrkld(other.wrkld), need_more_tasks(other.need_more_tasks), taskBufferConsumer(400000), taskBufferConsumerCopy(other.taskBufferConsumerCopy) {
     for (Task* task : taskBufferConsumerCopy) {
             taskBufferConsumer.push(task);
         }
@@ -140,7 +140,7 @@ public:
     //não dá para aceder ao indice do taskBufferConsumer então criei uma cópia e copio tudo de uma vez
 
     Consumer(int id, ConsumerType type, float frequency) 
-        : id(id), type(type), frequency(frequency), taskBufferConsumer(100000) {} 
+        : id(id), type(type), frequency(frequency), taskBufferConsumer(400000) {} 
 
 
 
@@ -158,17 +158,20 @@ public:
     }
 
 
+
     Task* popTask() {
         Task* task = nullptr;
-            if (taskBufferConsumer.pop(task)) {
+        if (taskBufferConsumer.pop(task)) {
+            std::lock_guard<std::mutex> lock(mtx);
+            if (!taskBufferConsumerCopy.empty()) {  // Safety check
                 taskBufferConsumerCopy.erase(taskBufferConsumerCopy.begin());
-                //std::cout << "Consumer " << id << " popped task! \n";
-                return task;
-            } else {
-                return nullptr;
             }
-    }
+            //std::cout << "Consumer " << id << " popped task! \n";
 
+            return task;
+        }
+        return nullptr;
+    }
 
 
 
